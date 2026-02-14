@@ -21,3 +21,4 @@ tower-http = { version = "0.6", features = ["cors", "trace"] }
 thiserror = "2"
 dotenvy = "0.15"
 tokio-util = "0.7"
+whatlang = "0.16"

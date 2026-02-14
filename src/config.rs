@@ -45,6 +45,8 @@ pub struct ElevenLabsConfig {
     pub api_key: String,
     #[serde(default = "default_voice_id")]
     pub voice_id: String,
+    #[serde(default)]
+    pub spanish_voice_id: Option<String>,
 }
 
 fn default_voice_id() -> String {

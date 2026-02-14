@@ -290,8 +290,22 @@ async fn run_pipeline(
     let response = state.claude.send(call_sid, &transcript).await?;
     tracing::info!(call_sid, response_len = response.len(), "Claude response");
 
-    // 4. Response → TTS audio
-    let tts_pcm_bytes = state.tts.synthesize(&response).await?;
+    // 4. Detect language and select voice
+    let voice_id = match state.config.elevenlabs.spanish_voice_id {
+        Some(ref id) => {
+            let info = whatlang::detect(&response);
+            if info.is_some_and(|i| i.lang() == whatlang::Lang::Spa && i.is_reliable()) {
+                tracing::info!(call_sid, "Detected Spanish, using spanish voice");
+                id.clone()
+            } else {
+                state.config.elevenlabs.voice_id.clone()
+            }
+        }
+        None => state.config.elevenlabs.voice_id.clone(),
+    };
+
+    // 5. Response → TTS audio
+    let tts_pcm_bytes = state.tts.synthesize_with_voice(&response, &voice_id).await?;
     tracing::debug!(tts_bytes = tts_pcm_bytes.len(), "TTS audio generated");
 
     Ok(Some(tts_pcm_bytes))

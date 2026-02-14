@@ -19,6 +19,8 @@ model = "whisper-large-v3-turbo"
 # Secret loaded from .env (ELEVENLABS_API_KEY)
 api_key = ""
 voice_id = "JAgnJveGGUh4qy4kh6dF"
+# Optional: voice ID for Spanish responses (auto-detected via language detection)
+# spanish_voice_id = "avokGQLR6UbUx9DZNelE"
 
 [claude]
 # Uses `claude` CLI from PATH — no API key needed

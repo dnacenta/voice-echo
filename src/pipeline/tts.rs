@@ -14,14 +14,20 @@ impl TtsClient {
         }
     }
 
-    /// Convert text to audio bytes (PCM 16-bit, 8kHz mono).
-    ///
-    /// ElevenLabs returns mp3 by default, but we request PCM format
-    /// directly at 8kHz for easy mu-law encoding.
+    /// Convert text to audio bytes (PCM 16-bit, 8kHz mono) using the default voice.
     pub async fn synthesize(&self, text: &str) -> Result<Vec<u8>, TtsError> {
+        self.synthesize_with_voice(text, &self.voice_id).await
+    }
+
+    /// Convert text to audio bytes (PCM 16-bit, 8kHz mono) using an explicit voice ID.
+    pub async fn synthesize_with_voice(
+        &self,
+        text: &str,
+        voice_id: &str,
+    ) -> Result<Vec<u8>, TtsError> {
         let url = format!(
             "https://api.elevenlabs.io/v1/text-to-speech/{}",
-            self.voice_id
+            voice_id
         );
 
         let body = serde_json::json!({
