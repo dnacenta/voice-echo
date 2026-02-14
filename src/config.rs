@@ -11,6 +11,8 @@ pub struct Config {
     pub vad: VadConfig,
     #[serde(default)]
     pub api: ApiConfig,
+    #[serde(default)]
+    pub hold_music: Option<HoldMusicConfig>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -88,6 +90,17 @@ pub struct ApiConfig {
     /// Bearer token required for /api/* endpoints. If empty, all requests are rejected.
     #[serde(default)]
     pub token: String,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct HoldMusicConfig {
+    pub file: String,
+    #[serde(default = "default_hold_music_volume")]
+    pub volume: f32,
+}
+
+fn default_hold_music_volume() -> f32 {
+    0.3
 }
 
 impl Config {

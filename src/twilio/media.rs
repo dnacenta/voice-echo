@@ -1,9 +1,13 @@
+use std::sync::Arc;
+
 use axum::extract::ws::{Message, WebSocket};
 use axum::extract::{State, WebSocketUpgrade};
 use axum::response::IntoResponse;
 use base64::Engine;
 use serde::Deserialize;
 use tokio::sync::mpsc;
+use tokio::time::{self, MissedTickBehavior};
+use tokio_util::sync::CancellationToken;
 
 use crate::pipeline::{audio, vad::VoiceActivityDetector};
 use crate::AppState;
@@ -203,6 +207,39 @@ async fn process_utterance(
     state: &AppState,
     tx: &mpsc::Sender<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Start hold music if configured
+    let cancel_token = CancellationToken::new();
+    if let Some(ref mulaw_data) = state.hold_music {
+        tokio::spawn(send_hold_music(
+            stream_sid.to_string(),
+            Arc::clone(mulaw_data),
+            tx.clone(),
+            cancel_token.clone(),
+        ));
+    }
+
+    // Run the pipeline, ensuring hold music is always cancelled
+    let result = run_pipeline(pcm_data, call_sid, stream_sid, state, tx).await;
+
+    // Always cancel hold music (no-op if already cancelled or not started)
+    cancel_token.cancel();
+
+    // Clear Twilio's audio buffer before sending response
+    if state.hold_music.is_some() {
+        send_clear(stream_sid, tx).await?;
+    }
+
+    result
+}
+
+/// Inner pipeline logic, separated so hold music cancellation is always reached.
+async fn run_pipeline(
+    pcm_data: &[i16],
+    call_sid: &str,
+    stream_sid: &str,
+    state: &AppState,
+    tx: &mpsc::Sender<Message>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 1. PCM → WAV
     let wav_data = audio::pcm_to_wav(pcm_data)?;
     tracing::debug!(wav_bytes = wav_data.len(), "Encoded WAV");
@@ -265,6 +302,65 @@ async fn send_audio(
     });
     tx.send(Message::Text(mark.to_string().into())).await?;
 
+    Ok(())
+}
+
+/// Loop hold music chunks at real-time pace until cancelled.
+///
+/// Sends 160-byte (20ms) mu-law chunks with `tokio::time::interval` pacing.
+/// The loop `select!`s on the cancellation token each tick for fast stop (~20ms).
+async fn send_hold_music(
+    stream_sid: String,
+    mulaw_data: Arc<Vec<u8>>,
+    tx: mpsc::Sender<Message>,
+    cancel: CancellationToken,
+) {
+    const CHUNK_SIZE: usize = 160; // 20ms at 8kHz
+
+    let mut interval = time::interval(time::Duration::from_millis(20));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    let chunks: Vec<&[u8]> = mulaw_data.chunks(CHUNK_SIZE).collect();
+    if chunks.is_empty() {
+        return;
+    }
+
+    let mut idx = 0;
+    tracing::debug!("Hold music started");
+
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => {
+                tracing::debug!("Hold music cancelled");
+                return;
+            }
+            _ = interval.tick() => {
+                let chunk = chunks[idx % chunks.len()];
+                let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
+                let msg = serde_json::json!({
+                    "event": "media",
+                    "streamSid": stream_sid,
+                    "media": { "payload": b64 }
+                });
+                if tx.send(Message::Text(msg.to_string().into())).await.is_err() {
+                    return; // channel closed
+                }
+                idx += 1;
+            }
+        }
+    }
+}
+
+/// Send a Twilio `clear` event to flush any buffered audio.
+async fn send_clear(
+    stream_sid: &str,
+    tx: &mpsc::Sender<Message>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let msg = serde_json::json!({
+        "event": "clear",
+        "streamSid": stream_sid,
+    });
+    tx.send(Message::Text(msg.to_string().into())).await?;
     Ok(())
 }
 

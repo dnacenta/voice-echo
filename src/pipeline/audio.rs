@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::path::Path;
 
 const MULAW_SAMPLE_RATE: u32 = 8000;
 const MULAW_BIAS: i16 = 0x84;
@@ -105,6 +106,117 @@ pub fn rms_energy(pcm_data: &[i16]) -> f64 {
     }
     let sum: f64 = pcm_data.iter().map(|&s| (s as f64) * (s as f64)).sum();
     (sum / pcm_data.len() as f64).sqrt()
+}
+
+/// Errors that can occur when loading hold music.
+#[derive(Debug, thiserror::Error)]
+pub enum HoldMusicError {
+    #[error("failed to read WAV file: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("invalid WAV format: {0}")]
+    Wav(#[from] hound::Error),
+    #[error("unsupported WAV format: {0}")]
+    Unsupported(String),
+}
+
+/// Resample audio using linear interpolation.
+pub fn resample_linear(samples: &[i16], from_rate: u32, to_rate: u32) -> Vec<i16> {
+    if from_rate == to_rate {
+        return samples.to_vec();
+    }
+
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = (samples.len() as f64 / ratio) as usize;
+    let mut output = Vec::with_capacity(out_len);
+
+    for i in 0..out_len {
+        let src_pos = i as f64 * ratio;
+        let idx = src_pos as usize;
+        let frac = src_pos - idx as f64;
+
+        let sample = if idx + 1 < samples.len() {
+            let a = samples[idx] as f64;
+            let b = samples[idx + 1] as f64;
+            (a + (b - a) * frac) as i16
+        } else {
+            samples[idx.min(samples.len() - 1)]
+        };
+
+        output.push(sample);
+    }
+
+    output
+}
+
+/// Load a WAV file and convert it to mu-law 8kHz, ready for Twilio streaming.
+///
+/// Handles stereo→mono downmix, arbitrary sample rate resampling, volume
+/// adjustment, and mu-law encoding.
+pub fn load_wav_as_mulaw(path: &Path, volume: f32) -> Result<Vec<u8>, HoldMusicError> {
+    let reader = hound::WavReader::open(path)?;
+    let spec = reader.spec();
+
+    let channels = spec.channels as usize;
+    let sample_rate = spec.sample_rate;
+
+    // Read samples as i16 (handle both 16-bit and 8-bit)
+    let all_samples: Vec<i16> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            if spec.bits_per_sample == 16 {
+                reader
+                    .into_samples::<i16>()
+                    .filter_map(|s| s.ok())
+                    .collect()
+            } else if spec.bits_per_sample == 24 {
+                reader
+                    .into_samples::<i32>()
+                    .filter_map(|s| s.ok())
+                    .map(|s| (s >> 8) as i16)
+                    .collect()
+            } else if spec.bits_per_sample == 8 {
+                reader
+                    .into_samples::<i8>()
+                    .filter_map(|s| s.ok())
+                    .map(|s| (s as i16) << 8)
+                    .collect()
+            } else {
+                return Err(HoldMusicError::Unsupported(format!(
+                    "{}-bit integer not supported",
+                    spec.bits_per_sample
+                )));
+            }
+        }
+        hound::SampleFormat::Float => reader
+            .into_samples::<f32>()
+            .filter_map(|s| s.ok())
+            .map(|s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16)
+            .collect(),
+    };
+
+    // Downmix stereo to mono
+    let mono: Vec<i16> = if channels > 1 {
+        all_samples
+            .chunks(channels)
+            .map(|frame| {
+                let sum: i32 = frame.iter().map(|&s| s as i32).sum();
+                (sum / channels as i32) as i16
+            })
+            .collect()
+    } else {
+        all_samples
+    };
+
+    // Resample to 8kHz
+    let resampled = resample_linear(&mono, sample_rate, MULAW_SAMPLE_RATE);
+
+    // Apply volume
+    let scaled: Vec<i16> = resampled
+        .iter()
+        .map(|&s| ((s as f32) * volume).clamp(-32768.0, 32767.0) as i16)
+        .collect();
+
+    // Encode to mu-law
+    Ok(encode_mulaw(&scaled))
 }
 
 #[cfg(test)]

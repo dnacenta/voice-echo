@@ -11,6 +11,7 @@ use axum::Router;
 use tower_http::trace::TraceLayer;
 
 use config::Config;
+use pipeline::audio;
 use pipeline::claude::ClaudeBridge;
 use pipeline::stt::SttClient;
 use pipeline::tts::TtsClient;
@@ -24,6 +25,8 @@ pub struct AppState {
     pub tts: Arc<TtsClient>,
     pub claude: Arc<ClaudeBridge>,
     pub twilio: Arc<TwilioClient>,
+    /// Pre-converted mu-law hold music data, if configured.
+    pub hold_music: Option<Arc<Vec<u8>>>,
 }
 
 #[tokio::main]
@@ -51,6 +54,26 @@ async fn main() {
         "Starting morpheus-line"
     );
 
+    // Load hold music if configured
+    let hold_music = config.hold_music.as_ref().and_then(|hm| {
+        let path = std::path::Path::new(&hm.file);
+        match audio::load_wav_as_mulaw(path, hm.volume) {
+            Ok(data) => {
+                tracing::info!(
+                    path = %hm.file,
+                    volume = hm.volume,
+                    mulaw_bytes = data.len(),
+                    "Loaded hold music"
+                );
+                Some(Arc::new(data))
+            }
+            Err(e) => {
+                tracing::warn!(path = %hm.file, "Failed to load hold music: {e}");
+                None
+            }
+        }
+    });
+
     // Build shared state
     let state = AppState {
         stt: Arc::new(SttClient::new(
@@ -70,6 +93,7 @@ async fn main() {
             &config.server.external_url,
         )),
         config: config.clone(),
+        hold_music,
     };
 
     // Build router

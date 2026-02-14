@@ -34,3 +34,7 @@ token = ""
 [vad]
 silence_threshold_ms = 1500
 energy_threshold = 50
+
+# [hold_music]
+# file = "/path/to/hold-music.wav"
+# volume = 0.3
