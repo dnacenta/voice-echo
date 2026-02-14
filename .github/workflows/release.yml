@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Extract version from branch name
+        id: version
+        run: |
+          BRANCH="${{ github.event.pull_request.head.ref }}"
+          # release/v0.0.3-rc1 -> v0.0.3, 0.0.3
+          TAG=$(echo "$BRANCH" | sed 's|release/||' | sed 's|-rc[0-9]*||')
+          SEMVER=$(echo "$TAG" | sed 's|^v||')
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Extracted tag: $TAG, semver: $SEMVER"
+
+      - name: Update version in Cargo.toml and Cargo.lock
+        run: |
+          sed -i '0,/^version = ".*"/s//version = "'"${{ steps.version.outputs.semver }}"'"/' Cargo.toml
+          sed -i '/^name = "morpheus-line"$/{ n; s/^version = ".*"/version = "'"${{ steps.version.outputs.semver }}"'"/; }' Cargo.lock
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git diff --cached --quiet && echo "No version change needed" || \
+            git commit -m "chore: bump version to ${{ steps.version.outputs.tag }}"
+          git push
+
+      - name: Create GitHub release
+        run: gh release create "${{ steps.version.outputs.tag }}" --generate-notes --target main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
