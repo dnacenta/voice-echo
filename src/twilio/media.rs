@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use axum::extract::ws::{Message, WebSocket};
@@ -93,6 +94,10 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
     let mut call_sid = String::new();
     let mut stream_sid = String::new();
 
+    // Suppress VAD while Morpheus is speaking (greeting or response).
+    // Set to true before send_audio, cleared on Twilio Mark event.
+    let speaking = Arc::new(AtomicBool::new(false));
+
     loop {
         tokio::select! {
             // Receive from Twilio
@@ -135,8 +140,9 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                         let tx = response_tx.clone();
                         let sid = stream_sid.clone();
                         let st = state.clone();
+                        let spk = Arc::clone(&speaking);
                         tokio::spawn(async move {
-                            if let Err(e) = send_greeting(&sid, &st, &tx).await {
+                            if let Err(e) = send_greeting(&sid, &st, &tx, &spk).await {
                                 tracing::error!("Failed to send greeting: {e}");
                             }
                         });
@@ -152,6 +158,11 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                             }
                         };
 
+                        // Suppress VAD while Morpheus is speaking
+                        if speaking.load(Ordering::Relaxed) {
+                            continue;
+                        }
+
                         if let Some(pcm_utterance) = vad.feed(&mulaw_bytes) {
                             tracing::info!(
                                 call_sid = %call_sid,
@@ -164,10 +175,11 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                             let sid = stream_sid.clone();
                             let csid = call_sid.clone();
                             let st = state.clone();
+                            let spk = Arc::clone(&speaking);
 
                             tokio::spawn(async move {
                                 if let Err(e) = process_utterance(
-                                    &pcm_utterance, &csid, &sid, &st, &tx,
+                                    &pcm_utterance, &csid, &sid, &st, &tx, &spk,
                                 ).await {
                                     tracing::error!(call_sid = %csid, "Pipeline error: {e}");
                                     if let Err(e) = send_error_message(&sid, &st, &tx).await {
@@ -178,7 +190,9 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                         }
                     }
                     StreamEvent::Mark { .. } => {
-                        tracing::debug!("Mark received");
+                        tracing::debug!("Mark received, resuming VAD");
+                        speaking.store(false, Ordering::Relaxed);
+                        vad.reset();
                     }
                     StreamEvent::Stop { .. } => {
                         tracing::info!(call_sid = %call_sid, "Stream stopped");
@@ -206,7 +220,12 @@ async fn process_utterance(
     stream_sid: &str,
     state: &AppState,
     tx: &mpsc::Sender<Message>,
+    speaking: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Suppress VAD for the entire processing cycle (hold music + response).
+    // Reset to false if no audio is sent, since no Mark event will come.
+    speaking.store(true, Ordering::Relaxed);
+
     // Start hold music if configured
     let cancel_token = CancellationToken::new();
     if let Some(ref mulaw_data) = state.hold_music {
@@ -218,28 +237,38 @@ async fn process_utterance(
         ));
     }
 
-    // Run the pipeline, ensuring hold music is always cancelled
-    let result = run_pipeline(pcm_data, call_sid, stream_sid, state, tx).await;
+    // Run the pipeline (STT → Claude → TTS) while hold music plays.
+    // Returns the TTS audio without sending it so we can sequence correctly.
+    let result = run_pipeline(pcm_data, call_sid, state).await;
 
-    // Always cancel hold music (no-op if already cancelled or not started)
+    // Always cancel hold music before sending response
     cancel_token.cancel();
 
-    // Clear Twilio's audio buffer before sending response
-    if state.hold_music.is_some() {
-        send_clear(stream_sid, tx).await?;
+    // Only clear + send when we have a real response. Ghost utterances
+    // (empty transcript, hallucination) must NOT clear Twilio's buffer —
+    // a previous response may still be playing.
+    if let Some(tts_pcm_bytes) = result? {
+        if state.hold_music.is_some() {
+            send_clear(stream_sid, tx).await?;
+        }
+        // speaking stays true — Mark event will reset it after playback
+        send_audio(stream_sid, &tts_pcm_bytes, tx).await?;
+    } else {
+        // No audio to send, no Mark coming — resume VAD now
+        speaking.store(false, Ordering::Relaxed);
     }
 
-    result
+    Ok(())
 }
 
-/// Inner pipeline logic, separated so hold music cancellation is always reached.
+/// Run STT → Claude → TTS and return the TTS audio bytes (if any).
+///
+/// Does NOT send audio to Twilio — the caller handles sequencing with hold music.
 async fn run_pipeline(
     pcm_data: &[i16],
     call_sid: &str,
-    stream_sid: &str,
     state: &AppState,
-    tx: &mpsc::Sender<Message>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
     // 1. PCM → WAV
     let wav_data = audio::pcm_to_wav(pcm_data)?;
     tracing::debug!(wav_bytes = wav_data.len(), "Encoded WAV");
@@ -249,11 +278,11 @@ async fn run_pipeline(
     let trimmed = transcript.trim();
     if trimmed.is_empty() {
         tracing::debug!("Empty transcript, skipping");
-        return Ok(());
+        return Ok(None);
     }
     if is_whisper_hallucination(trimmed) {
         tracing::debug!(transcript = %trimmed, "Filtered whisper hallucination");
-        return Ok(());
+        return Ok(None);
     }
     tracing::info!(call_sid, transcript = %trimmed, "Transcribed");
 
@@ -265,10 +294,7 @@ async fn run_pipeline(
     let tts_pcm_bytes = state.tts.synthesize(&response).await?;
     tracing::debug!(tts_bytes = tts_pcm_bytes.len(), "TTS audio generated");
 
-    // 5. Convert to mu-law and send back
-    send_audio(stream_sid, &tts_pcm_bytes, tx).await?;
-
-    Ok(())
+    Ok(Some(tts_pcm_bytes))
 }
 
 /// Send raw PCM bytes (little-endian i16) as mu-law media messages via the channel.
@@ -388,6 +414,8 @@ const WHISPER_HALLUCINATIONS: &[&str] = &[
     "hmm",
     "uh",
     "oh",
+    "amen",
+    "amen.",
 ];
 
 fn is_whisper_hallucination(transcript: &str) -> bool {
@@ -400,6 +428,7 @@ async fn send_greeting(
     stream_sid: &str,
     state: &AppState,
     tx: &mpsc::Sender<Message>,
+    speaking: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let greeting = &state.config.claude.greeting;
     if greeting.is_empty() {
@@ -407,6 +436,7 @@ async fn send_greeting(
     }
     tracing::info!("Sending greeting");
     let pcm_bytes = state.tts.synthesize(greeting).await?;
+    speaking.store(true, Ordering::Relaxed);
     send_audio(stream_sid, &pcm_bytes, tx).await
 }
 
