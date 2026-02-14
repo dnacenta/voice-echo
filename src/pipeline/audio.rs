@@ -90,6 +90,7 @@ pub fn pcm_to_wav(pcm_data: &[i16]) -> Result<Vec<u8>, hound::Error> {
 }
 
 /// Decode WAV file bytes to PCM samples. Expects 16-bit mono.
+#[allow(dead_code)]
 pub fn wav_to_pcm(wav_data: &[u8]) -> Result<Vec<i16>, hound::Error> {
     let cursor = Cursor::new(wav_data);
     let mut reader = hound::WavReader::new(cursor)?;

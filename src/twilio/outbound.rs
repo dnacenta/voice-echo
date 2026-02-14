@@ -70,10 +70,7 @@ impl TwilioClient {
             .await
             .map_err(|e| OutboundError::Request(e.to_string()))?;
 
-        let call_sid = body["sid"]
-            .as_str()
-            .unwrap_or("unknown")
-            .to_string();
+        let call_sid = body["sid"].as_str().unwrap_or("unknown").to_string();
 
         tracing::info!(to, call_sid = %call_sid, "Outbound call initiated");
         Ok(call_sid)

@@ -48,11 +48,7 @@ pub async fn handle_call(
 
     tracing::info!(to = %req.to, "Outbound call requested");
 
-    match state
-        .twilio
-        .call(&req.to, req.message.as_deref())
-        .await
-    {
+    match state.twilio.call(&req.to, req.message.as_deref()).await {
         Ok(call_sid) => (
             StatusCode::OK,
             Json(CallResponse {
@@ -74,6 +70,7 @@ pub async fn handle_call(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn check_auth(headers: &HeaderMap, expected_token: &str) -> Result<(), axum::response::Response> {
     if expected_token.is_empty() {
         tracing::warn!("API token not configured — rejecting request");

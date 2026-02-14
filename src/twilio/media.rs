@@ -314,6 +314,33 @@ async fn send_greeting(
     send_audio(stream_sid, &pcm_bytes, tx).await
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_known_hallucinations() {
+        assert!(is_whisper_hallucination("thank you"));
+        assert!(is_whisper_hallucination("Thank You"));
+        assert!(is_whisper_hallucination("THANKS FOR WATCHING."));
+        assert!(is_whisper_hallucination("..."));
+        assert!(is_whisper_hallucination("Bye bye."));
+    }
+
+    #[test]
+    fn passes_real_speech() {
+        assert!(!is_whisper_hallucination("Hello, how are you?"));
+        assert!(!is_whisper_hallucination("I need help with my order"));
+        assert!(!is_whisper_hallucination("Thank you for your help today"));
+        assert!(!is_whisper_hallucination("bye for now"));
+    }
+
+    #[test]
+    fn empty_string_is_not_hallucination() {
+        assert!(!is_whisper_hallucination(""));
+    }
+}
+
 /// Speak a fallback error message to the caller when the pipeline fails.
 async fn send_error_message(
     stream_sid: &str,

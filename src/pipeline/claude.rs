@@ -29,11 +29,7 @@ impl ClaudeBridge {
     ///
     /// Uses conversation continuation (`-r`) if a previous conversation
     /// exists for this call session, enabling multi-turn voice chats.
-    pub async fn send(
-        &self,
-        call_sid: &str,
-        prompt: &str,
-    ) -> Result<String, ClaudeError> {
+    pub async fn send(&self, call_sid: &str, prompt: &str) -> Result<String, ClaudeError> {
         let mut sessions = self.sessions.lock().await;
 
         // Clean up expired sessions

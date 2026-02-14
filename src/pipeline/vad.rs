@@ -63,6 +63,7 @@ impl VoiceActivityDetector {
     }
 
     /// Reset the detector state (e.g., between conversation turns).
+    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.pcm_buffer.clear();
         self.has_speech = false;
