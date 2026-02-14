@@ -55,6 +55,8 @@ pub struct ClaudeConfig {
     pub session_timeout_secs: u64,
     #[serde(default = "default_greeting")]
     pub greeting: String,
+    #[serde(default)]
+    pub dangerously_skip_permissions: bool,
 }
 
 fn default_session_timeout() -> u64 {

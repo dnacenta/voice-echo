@@ -61,7 +61,10 @@ async fn main() {
             config.elevenlabs.api_key.clone(),
             config.elevenlabs.voice_id.clone(),
         )),
-        claude: Arc::new(ClaudeBridge::new(config.claude.session_timeout_secs)),
+        claude: Arc::new(ClaudeBridge::new(
+            config.claude.session_timeout_secs,
+            config.claude.dangerously_skip_permissions,
+        )),
         twilio: Arc::new(TwilioClient::new(
             &config.twilio,
             &config.server.external_url,

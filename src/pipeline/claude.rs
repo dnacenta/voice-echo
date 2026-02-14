@@ -8,6 +8,7 @@ use tokio::sync::Mutex;
 pub struct ClaudeBridge {
     sessions: Arc<Mutex<HashMap<String, Session>>>,
     session_timeout: Duration,
+    dangerously_skip_permissions: bool,
 }
 
 struct Session {
@@ -16,10 +17,11 @@ struct Session {
 }
 
 impl ClaudeBridge {
-    pub fn new(session_timeout_secs: u64) -> Self {
+    pub fn new(session_timeout_secs: u64, dangerously_skip_permissions: bool) -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             session_timeout: Duration::from_secs(session_timeout_secs),
+            dangerously_skip_permissions,
         }
     }
 
@@ -46,6 +48,10 @@ impl ClaudeBridge {
 
         let mut cmd = Command::new("claude");
         cmd.arg("-p").arg(prompt).arg("--output-format").arg("text");
+
+        if self.dangerously_skip_permissions {
+            cmd.arg("--dangerously-skip-permissions");
+        }
 
         // Continue existing conversation if we have one
         if let Some(ref conv_id) = session.conversation_id {
