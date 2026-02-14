@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>morpheus-line -- Voice interface for Claude over the phone</title>
+  <meta name="description" content="Talk to Claude. Over the phone. Open source voice interface built in Rust. Uses Twilio, Groq Whisper, ElevenLabs, and Claude Code CLI.">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0b;
+      --bg-raised: #111113;
+      --bg-card: #161618;
+      --border: #222225;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --text-muted: #555;
+      --green: #3ddc84;
+      --green-dim: #2a9d5e;
+      --green-glow: rgba(61, 220, 132, 0.08);
+      --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    a { color: var(--green); text-decoration: none; transition: opacity 0.2s; }
+    a:hover { opacity: 0.8; }
+
+    code, .mono { font-family: var(--mono); }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Nav ── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(10, 10, 11, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 56px;
+    }
+
+    nav .logo {
+      font-family: var(--mono);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      letter-spacing: -0.02em;
+    }
+
+    nav .logo span { color: var(--green); }
+
+    nav .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+    }
+
+    nav .nav-links a {
+      color: var(--text-dim);
+      font-size: 13px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    nav .nav-links a:hover { color: var(--text); opacity: 1; }
+
+    .gh-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text) !important;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .gh-btn:hover { border-color: var(--text-muted); background: var(--bg-raised); opacity: 1; }
+
+    .gh-btn svg { width: 16px; height: 16px; fill: var(--text); }
+
+    /* ── Hero ── */
+    .hero {
+      padding: 160px 0 100px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 14px;
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-dim);
+      margin-bottom: 32px;
+    }
+
+    .hero-badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    .hero h1 {
+      font-family: var(--mono);
+      font-size: clamp(32px, 5vw, 48px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 20px;
+    }
+
+    .hero h1 span { color: var(--green); }
+
+    .hero .tagline {
+      font-size: clamp(18px, 2.5vw, 22px);
+      color: var(--text-dim);
+      margin-bottom: 16px;
+      font-weight: 400;
+    }
+
+    .hero .desc {
+      font-size: 15px;
+      color: var(--text-muted);
+      max-width: 520px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      background: var(--green);
+      color: #0a0a0b !important;
+      font-weight: 600;
+      font-size: 14px;
+      border-radius: 8px;
+      transition: opacity 0.2s;
+    }
+
+    .btn-primary:hover { opacity: 0.85; }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 24px;
+      border: 1px solid var(--border);
+      color: var(--text) !important;
+      font-weight: 500;
+      font-size: 14px;
+      border-radius: 8px;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .btn-secondary:hover { border-color: var(--text-muted); background: var(--bg-raised); opacity: 1; }
+
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 48px;
+      flex-wrap: wrap;
+    }
+
+    .hero-stats .stat {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .hero-stats .stat strong {
+      color: var(--text-dim);
+      font-weight: 600;
+    }
+
+    /* ── Section shared ── */
+    section { padding: 80px 0; }
+
+    .section-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--green);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+    }
+
+    .section-desc {
+      font-size: 15px;
+      color: var(--text-dim);
+      max-width: 560px;
+      line-height: 1.7;
+      margin-bottom: 48px;
+    }
+
+    /* ── Pipeline ── */
+    .pipeline-section { border-top: 1px solid var(--border); }
+
+    .pipeline {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+      padding: 20px 0;
+    }
+
+    .pipeline-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      padding: 20px 16px;
+      min-width: 100px;
+    }
+
+    .pipeline-step .icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+    }
+
+    .pipeline-step .label {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+
+    .pipeline-step .sublabel {
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    .pipeline-arrow {
+      color: var(--text-muted);
+      font-size: 18px;
+      font-family: var(--mono);
+      padding: 0 4px;
+      margin-top: -16px;
+    }
+
+    /* ── Features ── */
+    .features-section { border-top: 1px solid var(--border); }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    .feature-card {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--bg-raised);
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--green-dim);
+      background: var(--green-glow);
+    }
+
+    .feature-card .feature-icon {
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+
+    .feature-card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .feature-card p {
+      font-size: 13px;
+      color: var(--text-dim);
+      line-height: 1.6;
+    }
+
+    .feature-card .feature-tag {
+      display: inline-block;
+      margin-top: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--green-dim);
+      padding: 2px 8px;
+      border: 1px solid rgba(61, 220, 132, 0.15);
+      border-radius: 4px;
+      background: rgba(61, 220, 132, 0.05);
+    }
+
+    /* ── Tech stack ── */
+    .stack-section { border-top: 1px solid var(--border); }
+
+    .stack-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+
+    .stack-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--bg-raised);
+    }
+
+    .stack-item .stack-icon {
+      font-size: 22px;
+      width: 36px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .stack-item .stack-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .stack-item .stack-info p {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-family: var(--mono);
+    }
+
+    /* ── Quick start ── */
+    .quickstart-section { border-top: 1px solid var(--border); }
+
+    .quickstart-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .qs-step {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .qs-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--green);
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .qs-content { flex: 1; }
+
+    .qs-content .qs-label {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .code-block {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.7;
+      color: var(--text-dim);
+      overflow-x: auto;
+      position: relative;
+    }
+
+    .code-block .comment { color: var(--text-muted); }
+    .code-block .cmd { color: var(--text); }
+    .code-block .flag { color: var(--green-dim); }
+
+    /* ── Footer ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-left {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .footer-left a { color: var(--text-dim); }
+
+    .footer-links {
+      display: flex;
+      gap: 20px;
+    }
+
+    .footer-links a {
+      font-size: 13px;
+      color: var(--text-muted);
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--text); }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      .hero { padding: 120px 0 60px; }
+      section { padding: 60px 0; }
+      .hero-stats { gap: 20px; }
+
+      .pipeline {
+        flex-direction: column;
+        gap: 0;
+      }
+
+      .pipeline-arrow {
+        transform: rotate(90deg);
+        margin: 0;
+        padding: 2px 0;
+      }
+
+      .pipeline-step { padding: 10px 16px; }
+
+      nav .nav-links a.nav-text { display: none; }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .stack-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .footer-inner {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav>
+    <div class="container">
+      <a href="#" class="logo"><span>&gt;</span> morpheus-line</a>
+      <div class="nav-links">
+        <a href="#how-it-works" class="nav-text">How it works</a>
+        <a href="#features" class="nav-text">Features</a>
+        <a href="#quickstart" class="nav-text">Quick start</a>
+        <a href="https://github.com/dnacenta/morpheus-line" class="gh-btn" target="_blank" rel="noopener">
+          <svg viewBox="0 0 16 16"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <span class="dot"></span>
+        open source
+      </div>
+      <h1>morpheus<span>-</span>line</h1>
+      <p class="tagline">Talk to Claude. Over the phone.</p>
+      <p class="desc">
+        Voice interface that connects phone calls to Claude Code CLI.
+        Call in or trigger outbound calls from your automation workflows.
+      </p>
+      <div class="hero-actions">
+        <a href="https://github.com/dnacenta/morpheus-line" class="btn-primary" target="_blank" rel="noopener">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+        <a href="#quickstart" class="btn-secondary">Quick start</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat"><strong>Rust</strong></div>
+        <div class="stat"><strong>Real-time</strong> audio</div>
+        <div class="stat"><strong>Open</strong> source</div>
+        <div class="stat"><strong>Self-hosted</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How It Works -->
+  <section class="pipeline-section" id="how-it-works">
+    <div class="container">
+      <p class="section-label">How it works</p>
+      <h2 class="section-title">End-to-end voice pipeline</h2>
+      <p class="section-desc">
+        A phone call comes in through Twilio, gets transcribed, reasoned about by Claude, and spoken back -- all in real time over a WebSocket.
+      </p>
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div class="icon">&#128222;</div>
+          <div class="label">Call</div>
+          <div class="sublabel">Twilio</div>
+        </div>
+        <div class="pipeline-arrow">&#8594;</div>
+        <div class="pipeline-step">
+          <div class="icon">&#127897;</div>
+          <div class="label">VAD</div>
+          <div class="sublabel">energy-based</div>
+        </div>
+        <div class="pipeline-arrow">&#8594;</div>
+        <div class="pipeline-step">
+          <div class="icon">&#128221;</div>
+          <div class="label">STT</div>
+          <div class="sublabel">Groq Whisper</div>
+        </div>
+        <div class="pipeline-arrow">&#8594;</div>
+        <div class="pipeline-step">
+          <div class="icon">&#129504;</div>
+          <div class="label">Claude</div>
+          <div class="sublabel">Code CLI</div>
+        </div>
+        <div class="pipeline-arrow">&#8594;</div>
+        <div class="pipeline-step">
+          <div class="icon">&#128264;</div>
+          <div class="label">TTS</div>
+          <div class="sublabel">ElevenLabs</div>
+        </div>
+        <div class="pipeline-arrow">&#8594;</div>
+        <div class="pipeline-step">
+          <div class="icon">&#128222;</div>
+          <div class="label">Response</div>
+          <div class="sublabel">mu-law audio</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="features-section" id="features">
+    <div class="container">
+      <p class="section-label">Features</p>
+      <h2 class="section-title">Built for real usage</h2>
+      <p class="section-desc">
+        Not a demo. A working voice pipeline with the pieces you need for reliable phone conversations with Claude.
+      </p>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon">&#9201;</div>
+          <h3>Voice Activity Detection</h3>
+          <p>Energy-based VAD with configurable silence threshold and RMS energy floor. Detects when you stop talking, not when you pause.</p>
+          <span class="feature-tag">vad.rs</span>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128683;</div>
+          <h3>Whisper Hallucination Filter</h3>
+          <p>Filters common Whisper artifacts from silence and background noise. No phantom transcriptions hitting Claude.</p>
+          <span class="feature-tag">stt.rs</span>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128488;</div>
+          <h3>Multi-turn Conversations</h3>
+          <p>Session memory per call with configurable timeout. Claude remembers context across turns within the same conversation.</p>
+          <span class="feature-tag">session_timeout_secs</span>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128225;</div>
+          <h3>Outbound Call API</h3>
+          <p>POST to <code>/api/call</code> with a phone number and optional message. Trigger calls from n8n, curl, or any automation.</p>
+          <span class="feature-tag">POST /api/call</span>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#9889;</div>
+          <h3>Real-time Audio Pipeline</h3>
+          <p>Mu-law codec, streaming WebSocket, direct PCM conversion. No intermediate servers -- Twilio talks straight to Axum.</p>
+          <span class="feature-tag">audio.rs</span>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#128172;</div>
+          <h3>Configurable Greeting</h3>
+          <p>Custom TTS greeting when a call connects. Set it in config.toml -- default is "Hello, this is Morpheus".</p>
+          <span class="feature-tag">config.toml</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tech Stack -->
+  <section class="stack-section" id="stack">
+    <div class="container">
+      <p class="section-label">Tech stack</p>
+      <h2 class="section-title">What's under the hood</h2>
+      <p class="section-desc">
+        Minimal dependencies, no runtime bloat. One compiled binary handles everything.
+      </p>
+      <div class="stack-grid">
+        <div class="stack-item">
+          <div class="stack-icon">&#129408;</div>
+          <div class="stack-info">
+            <h4>Rust</h4>
+            <p>core runtime</p>
+          </div>
+        </div>
+        <div class="stack-item">
+          <div class="stack-icon">&#9881;</div>
+          <div class="stack-info">
+            <h4>Axum</h4>
+            <p>http + websocket</p>
+          </div>
+        </div>
+        <div class="stack-item">
+          <div class="stack-icon">&#128222;</div>
+          <div class="stack-info">
+            <h4>Twilio</h4>
+            <p>telephony</p>
+          </div>
+        </div>
+        <div class="stack-item">
+          <div class="stack-icon">&#127897;</div>
+          <div class="stack-info">
+            <h4>Groq Whisper</h4>
+            <p>speech-to-text</p>
+          </div>
+        </div>
+        <div class="stack-item">
+          <div class="stack-icon">&#128264;</div>
+          <div class="stack-info">
+            <h4>ElevenLabs</h4>
+            <p>text-to-speech</p>
+          </div>
+        </div>
+        <div class="stack-item">
+          <div class="stack-icon">&#129504;</div>
+          <div class="stack-info">
+            <h4>Claude Code CLI</h4>
+            <p>reasoning engine</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Quick Start -->
+  <section class="quickstart-section" id="quickstart">
+    <div class="container">
+      <p class="section-label">Quick start</p>
+      <h2 class="section-title">Up and running in minutes</h2>
+      <p class="section-desc">
+        Clone, configure, deploy. You'll need a Twilio number and API keys for Groq and ElevenLabs.
+      </p>
+      <div class="quickstart-steps">
+        <div class="qs-step">
+          <div class="qs-num">1</div>
+          <div class="qs-content">
+            <p class="qs-label">Clone and build</p>
+            <div class="code-block"><span class="cmd">git clone https://github.com/dnacenta/morpheus-line.git</span>
+<span class="cmd">cd morpheus-line</span>
+<span class="cmd">cargo build</span> <span class="flag">--release</span></div>
+          </div>
+        </div>
+        <div class="qs-step">
+          <div class="qs-num">2</div>
+          <div class="qs-content">
+            <p class="qs-label">Configure</p>
+            <div class="code-block"><span class="cmd">mkdir -p ~/.morpheus-line</span>
+<span class="cmd">cp config.example.toml ~/.morpheus-line/config.toml</span>
+<span class="cmd">cp .env.example ~/.morpheus-line/.env</span>
+<span class="comment"># Edit .env with your API keys</span>
+<span class="comment"># Edit config.toml with your Twilio number</span></div>
+          </div>
+        </div>
+        <div class="qs-step">
+          <div class="qs-num">3</div>
+          <div class="qs-content">
+            <p class="qs-label">Deploy and run</p>
+            <div class="code-block"><span class="comment"># Copy the binary, set up nginx + systemd</span>
+<span class="comment"># See the full guide in the README</span>
+<span class="cmd">sudo cp target/release/morpheus-line /usr/local/bin/</span>
+<span class="cmd">sudo systemctl enable</span> <span class="flag">--now</span> <span class="cmd">morpheus-line</span></div>
+          </div>
+        </div>
+        <div class="qs-step">
+          <div class="qs-num">4</div>
+          <div class="qs-content">
+            <p class="qs-label">Point Twilio to your server</p>
+            <div class="code-block"><span class="comment"># In Twilio Console, set voice webhook to:</span>
+<span class="cmd">POST https://your-server.example.com/twilio/voice</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-inner">
+      <div class="footer-left">
+        <a href="https://github.com/dnacenta/morpheus-line" target="_blank" rel="noopener">morpheus-line</a>
+        &middot; GPL-3.0
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/dnacenta/morpheus-line" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/dnacenta/morpheus-line/blob/development/README.md" target="_blank" rel="noopener">Docs</a>
+        <a href="https://github.com/dnacenta/morpheus-line/blob/development/CONTRIBUTING.md" target="_blank" rel="noopener">Contributing</a>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
