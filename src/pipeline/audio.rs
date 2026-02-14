@@ -163,7 +163,10 @@ pub fn load_wav_as_mulaw(path: &Path, volume: f32) -> Result<Vec<u8>, HoldMusicE
     let all_samples: Vec<i16> = match spec.sample_format {
         hound::SampleFormat::Int => {
             if spec.bits_per_sample == 16 {
-                reader.into_samples::<i16>().filter_map(|s| s.ok()).collect()
+                reader
+                    .into_samples::<i16>()
+                    .filter_map(|s| s.ok())
+                    .collect()
             } else if spec.bits_per_sample == 24 {
                 reader
                     .into_samples::<i32>()
