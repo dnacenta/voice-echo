@@ -3,7 +3,7 @@
 [![CI](https://github.com/dnacenta/morpheus-line/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/dnacenta/morpheus-line/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/github/license/dnacenta/morpheus-line)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/dnacenta/morpheus-line?label=version&color=green)](https://github.com/dnacenta/morpheus-line/tags)
-[![Rust](https://img.shields.io/badge/rust-1.75%2B-orange)](https://rustup.rs/)
+[![Rust](https://img.shields.io/badge/rust-1.93%2B-orange)](https://rustup.rs/)
 
 Voice interface for Claude Code over the phone. Call in and talk to Claude, or trigger outbound calls from n8n / automation workflows.
 

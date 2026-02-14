@@ -1,6 +1,6 @@
 [package]
 name = "morpheus-line"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Voice interface for Claude Code via Twilio"
 
