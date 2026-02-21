@@ -50,7 +50,7 @@ pub struct ElevenLabsConfig {
 }
 
 fn default_voice_id() -> String {
-    "JAgnJveGGUh4qy4kh6dF".to_string()
+    "EST9Ui6982FZPSi7gCHi".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]

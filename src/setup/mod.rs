@@ -45,7 +45,7 @@ pub fn run() {
     println!("\n  {} ElevenLabs (TTS)", ansi::bold(">>"));
     let elevenlabs_api_key = prompts::ask_secret("API Key");
     let elevenlabs_voice_id =
-        prompts::ask("Voice ID", Some("JAgnJveGGUh4qy4kh6dF"));
+        prompts::ask("Voice ID", Some("EST9Ui6982FZPSi7gCHi"));
 
     // Server
     println!("\n  {} Server", ansi::bold(">>"));

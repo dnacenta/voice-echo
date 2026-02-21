@@ -18,7 +18,7 @@ model = "whisper-large-v3-turbo"
 [elevenlabs]
 # Secret loaded from .env (ELEVENLABS_API_KEY)
 api_key = ""
-voice_id = "JAgnJveGGUh4qy4kh6dF"
+voice_id = "EST9Ui6982FZPSi7gCHi"
 # Optional: voice ID for Spanish responses (auto-detected via language detection)
 # spanish_voice_id = "avokGQLR6UbUx9DZNelE"
 
