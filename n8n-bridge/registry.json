@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "modules": {
+    "slack-claude-chat": {
+      "workflow_id": "Je439HJU6E6W95N9",
+      "webhook_path": "slack-claude",
+      "description": "Slack integration — receives messages from Slack, sends to Claude bridge, posts response back",
+      "triggers": ["webhook"],
+      "created_at": "2026-02-21T11:30:00Z",
+      "updated_at": "2026-02-21T11:30:00Z",
+      "active": true
+    },
+    "matrix-daily-standup": {
+      "workflow_id": "nKwL4c15Er1yZE5N",
+      "webhook_path": "matrix-crew-standup",
+      "description": "Aggregates agent reports and posts formatted daily standup to Slack #matrix-crew",
+      "triggers": ["webhook"],
+      "created_at": "2026-02-21T11:45:00Z",
+      "updated_at": "2026-02-21T11:45:00Z",
+      "active": true
+    },
+    "matrix-agent-runs": {
+      "workflow_id": "Lp4epPjbUdhZ5ljQ",
+      "webhook_path": "matrix-crew-agent",
+      "description": "Receives individual agent reports, posts persona-styled messages to Slack with optional findings thread",
+      "triggers": ["webhook"],
+      "created_at": "2026-02-21T12:00:00Z",
+      "updated_at": "2026-02-21T12:00:00Z",
+      "active": true
+    }
+  }
+}

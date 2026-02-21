@@ -3,8 +3,11 @@ mod config;
 mod pipeline;
 mod twilio;
 
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use tokio::sync::Mutex;
 
 use axum::routing::{get, post};
 use axum::Router;
@@ -27,6 +30,9 @@ pub struct AppState {
     pub twilio: Arc<TwilioClient>,
     /// Pre-converted mu-law hold music data, if configured.
     pub hold_music: Option<Arc<Vec<u8>>>,
+    /// Context for outbound calls, keyed by call_sid.
+    /// Consumed on first utterance so Claude knows why it called.
+    pub call_contexts: Arc<Mutex<HashMap<String, String>>>,
 }
 
 #[tokio::main]
@@ -35,7 +41,7 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "morpheus_line=info,tower_http=info".into()),
+                .unwrap_or_else(|_| "trinity_echo=info,tower_http=info".into()),
         )
         .init();
 
@@ -51,7 +57,7 @@ async fn main() {
     tracing::info!(
         host = %config.server.host,
         port = config.server.port,
-        "Starting morpheus-line"
+        "Starting trinity-echo"
     );
 
     // Load hold music if configured
@@ -94,6 +100,7 @@ async fn main() {
         )),
         config: config.clone(),
         hold_music,
+        call_contexts: Arc::new(Mutex::new(HashMap::new())),
     };
 
     // Build router

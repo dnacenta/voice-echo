@@ -25,12 +25,12 @@ voice_id = "JAgnJveGGUh4qy4kh6dF"
 [claude]
 # Uses `claude` CLI from PATH — no API key needed
 session_timeout_secs = 300
-greeting = "Hello, this is Morpheus"
+greeting = "Hello, this is Trinity"
 # Allow claude CLI to run tools without permission prompts (use with caution)
 dangerously_skip_permissions = false
 
 [api]
-# Secret loaded from .env (MORPHEUS_API_TOKEN)
+# Secret loaded from .env (TRINITY_API_TOKEN)
 token = ""
 
 [vad]

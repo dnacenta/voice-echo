@@ -4,7 +4,7 @@ Contributions are welcome. This document explains the workflow.
 
 ## Reporting bugs or requesting features
 
-Open an [issue](https://github.com/dnacenta/morpheus-line/issues). Use a clear title and include enough context to reproduce the problem or understand the request.
+Open an [issue](https://github.com/dnacenta/trinity-echo/issues). Use a clear title and include enough context to reproduce the problem or understand the request.
 
 ## Making changes
 

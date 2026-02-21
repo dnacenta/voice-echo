@@ -1,0 +1,14 @@
+[Unit]
+Description=trinity-echo — Voice interface for Claude Code
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/trinity-echo
+Environment=RUST_LOG=trinity_echo=info,tower_http=info
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

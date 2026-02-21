@@ -1,8 +1,8 @@
-# morpheus-line
+# trinity-echo
 
-[![CI](https://github.com/dnacenta/morpheus-line/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/dnacenta/morpheus-line/actions/workflows/ci.yml)
-[![License: GPL-3.0](https://img.shields.io/github/license/dnacenta/morpheus-line)](LICENSE)
-[![Version](https://img.shields.io/github/v/tag/dnacenta/morpheus-line?label=version&color=green)](https://github.com/dnacenta/morpheus-line/tags)
+[![CI](https://github.com/dnacenta/trinity-echo/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/dnacenta/trinity-echo/actions/workflows/ci.yml)
+[![License: GPL-3.0](https://img.shields.io/github/license/dnacenta/trinity-echo)](LICENSE)
+[![Version](https://img.shields.io/github/v/tag/dnacenta/trinity-echo?label=version&color=green)](https://github.com/dnacenta/trinity-echo/tags)
 [![Rust](https://img.shields.io/badge/rust-1.93%2B-orange)](https://rustup.rs/)
 
 Voice interface for Claude Code over the phone. Call in and talk to Claude, or trigger outbound calls from n8n / automation workflows.
@@ -11,9 +11,11 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
 
 ## Architecture
 
+### Voice Pipeline
+
 ```
                          ┌─────────────────────────────────────┐
-                         │          morpheus-line (axum)        │
+                         │          trinity-echo (axum)        │
                          │                                     │
   Phone ◄──► Twilio ◄──►│  WebSocket ◄──► VAD ──► STT (Groq)  │
                          │                         │           │
@@ -23,10 +25,64 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
                          │                         │           │
                          │                    mu-law encode     │
                          └─────────────────────────────────────┘
-                                        ▲
-                                        │ POST /api/call
-                                   n8n / curl
 ```
+
+### n8n Bridge — AI-Initiated Calls
+
+```
+  ┌──────────────┐    trigger     ┌──────────────────┐
+  │  Any module   │──────────────►│   Orchestrator    │
+  │  (slack,      │               │   reads registry, │
+  │   standup,    │               │   routes to       │
+  │   alerts...) │               │   target module   │
+  └──────────────┘               └────────┬─────────┘
+                                          │
+                                          ▼
+                                 ┌──────────────────┐
+                                 │   call-human      │
+                                 │   builds request, │
+                                 │   passes context  │
+                                 └────────┬─────────┘
+                                          │
+                                          │ POST /api/call
+                                          │ { to, context }
+                                          ▼
+                                 ┌──────────────────┐
+                                 │  trinity-echo     │
+                                 │  stores context   │──► Twilio ──► Phone rings
+                                 │  per call_sid     │
+                                 └────────┬─────────┘
+                                          │
+                                          │ caller picks up
+                                          ▼
+                                 ┌──────────────────┐
+                                 │  Claude CLI       │
+                                 │  first prompt     │
+                                 │  includes context │
+                                 │  "I'm calling     │
+                                 │   because..."     │
+                                 └──────────────────┘
+```
+
+### Full System
+
+```
+  ┌─────────┐        ┌──────────┐        ┌───────────────┐
+  │  Slack   │◄──────►│   n8n    │◄──────►│ claude-bridge │──► Claude CLI
+  └─────────┘        │ (Docker) │        └───────────────┘
+                     │          │
+  ┌─────────┐        │  modules:│        ┌───────────────┐
+  │ Triggers │──────►│  orchest.│──────►│ trinity-echo  │──► Claude CLI
+  │ (cron,   │       │  call-   │  API   │ (Rust, axum)  │
+  │  webhook,│       │  human,  │        └───────┬───────┘
+  │  events) │       │  slack,  │                │
+  └─────────┘        │  standup │                ▼
+                     └──────────┘        ┌───────────────┐
+                                         │    Twilio      │◄──► Phone
+                                         └───────────────┘
+```
+
+Claude CLI is the brain, n8n is the nervous system, trinity-echo is the voice.
 
 ## How It Works
 
@@ -44,10 +100,12 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
 
 ### Outbound calls
 
-1. POST to `/api/call` with a phone number and optional initial message
-2. morpheus-line calls Twilio REST API to initiate the call
-3. When the recipient picks up, Twilio hits `/twilio/voice/outbound`
-4. Same media stream pipeline kicks in -- full duplex conversation with Claude
+1. POST to `/api/call` with a phone number and optional context
+2. trinity-echo calls Twilio REST API to initiate the call
+3. Context is stored per `call_sid` so Claude knows *why* it's calling
+4. When the recipient picks up, Twilio hits `/twilio/voice/outbound`
+5. Same media stream pipeline kicks in -- Claude's first prompt includes the context
+6. Context is consumed after first use, subsequent turns are normal conversation
 
 ## Prerequisites
 
@@ -64,45 +122,45 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/dnacenta/morpheus-line.git
-cd morpheus-line
+git clone https://github.com/dnacenta/trinity-echo.git
+cd trinity-echo
 cargo build --release
 ```
 
-The binary will be at `target/release/morpheus-line`.
+The binary will be at `target/release/trinity-echo`.
 
 ### 2. Configure
 
-Copy the example files to `~/.morpheus-line/`:
+Copy the example files to `~/.trinity-echo/`:
 
 ```bash
-mkdir -p ~/.morpheus-line
-cp config.example.toml ~/.morpheus-line/config.toml
-cp .env.example ~/.morpheus-line/.env
+mkdir -p ~/.trinity-echo
+cp config.example.toml ~/.trinity-echo/config.toml
+cp .env.example ~/.trinity-echo/.env
 ```
 
-Edit `~/.morpheus-line/.env` with your API keys:
+Edit `~/.trinity-echo/.env` with your API keys:
 
 ```bash
 TWILIO_ACCOUNT_SID=AC...
 TWILIO_AUTH_TOKEN=your_token
 GROQ_API_KEY=gsk_...
 ELEVENLABS_API_KEY=your_key
-MORPHEUS_API_TOKEN=$(openssl rand -hex 32)
+TRINITY_API_TOKEN=$(openssl rand -hex 32)
 SERVER_EXTERNAL_URL=https://your-server.example.com
 ```
 
-Edit `~/.morpheus-line/config.toml` -- set your Twilio phone number and adjust defaults as needed. Secrets are loaded from `.env`, so leave them empty in the TOML.
+Edit `~/.trinity-echo/config.toml` -- set your Twilio phone number and adjust defaults as needed. Secrets are loaded from `.env`, so leave them empty in the TOML.
 
-You can override the config directory with `MORPHEUS_LINE_CONFIG=/path/to/config.toml`.
+You can override the config directory with `TRINITY_ECHO_CONFIG=/path/to/config.toml`.
 
 ### 3. nginx
 
 Copy `deploy/nginx.conf` and replace `your-server.example.com` with your domain:
 
 ```bash
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/morpheus-line
-sudo ln -s /etc/nginx/sites-available/morpheus-line /etc/nginx/sites-enabled/
+sudo cp deploy/nginx.conf /etc/nginx/sites-available/trinity-echo
+sudo ln -s /etc/nginx/sites-available/trinity-echo /etc/nginx/sites-enabled/
 # Edit server_name and SSL cert paths
 sudo nginx -t && sudo systemctl reload nginx
 ```
@@ -112,10 +170,10 @@ TLS is required -- Twilio only sends webhooks over HTTPS. Use certbot or similar
 ### 4. systemd
 
 ```bash
-sudo cp target/release/morpheus-line /usr/local/bin/
-sudo cp deploy/morpheus-line.service /etc/systemd/system/
+sudo cp target/release/trinity-echo /usr/local/bin/
+sudo cp deploy/trinity-echo.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now morpheus-line
+sudo systemctl enable --now trinity-echo
 ```
 
 ### 5. Twilio webhook
@@ -157,9 +215,9 @@ All secrets can be set via env vars (recommended) instead of config.toml:
 | `TWILIO_AUTH_TOKEN`    | `twilio.auth_token`        |
 | `GROQ_API_KEY`         | `groq.api_key`             |
 | `ELEVENLABS_API_KEY`   | `elevenlabs.api_key`       |
-| `MORPHEUS_API_TOKEN`   | `api.token`                |
+| `TRINITY_API_TOKEN`   | `api.token`                |
 | `SERVER_EXTERNAL_URL`  | `server.external_url`      |
-| `MORPHEUS_LINE_CONFIG` | Config file path            |
+| `TRINITY_ECHO_CONFIG` | Config file path            |
 | `RUST_LOG`             | Log level filter            |
 
 ## Usage
@@ -174,14 +232,42 @@ Just call your Twilio number. You'll hear "Connected to Claude. Go ahead and spe
 curl -X POST https://your-server.example.com/api/call \
   -H "Authorization: Bearer YOUR_API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"to": "+34612345678", "message": "Server CPU at 95 percent"}'
+  -d '{
+    "to": "+34612345678",
+    "context": "Server CPU at 95% for the last 10 minutes. Top processes: n8n 45%, claude 30%."
+  }'
 ```
 
-The recipient picks up, hears the initial message (if provided), then can talk to Claude.
+The recipient picks up and Claude already knows why it called -- context is injected into the first prompt. The optional `message` field adds a Twilio `<Say>` greeting before the stream starts (usually not needed since Claude handles the greeting via TTS).
 
-### n8n integration
+### n8n Bridge
 
-Use an HTTP Request node in n8n to POST to `/api/call`. Set the bearer token in the header. Useful for alerting workflows -- Claude can explain what's happening when the call connects.
+trinity-echo integrates with n8n through a bridge architecture:
+
+- **Orchestrator** -- central webhook that routes triggers to registered modules
+- **Modules** -- individual workflows managed via a JSON registry
+- **call-human** -- module that triggers outbound calls with context
+
+Trigger a call from any n8n workflow via the orchestrator:
+
+```bash
+curl -X POST http://localhost:5678/webhook/orchestrator \
+  -H "Content-Type: application/json" \
+  -H "X-Bridge-Secret: YOUR_BRIDGE_SECRET" \
+  -d '{
+    "action": "trigger",
+    "module": "call-human",
+    "data": {
+      "reason": "Server CPU critical",
+      "context": "CPU at 95% for 10 minutes. Load average 12.5.",
+      "urgency": "high"
+    }
+  }'
+```
+
+The orchestrator reads the module registry, forwards the payload to the `call-human` webhook, which calls the trinity-echo API with context. When the user picks up, Claude knows exactly what's happening.
+
+Other modules (Slack chat, daily standup, agent reports) can also trigger calls by routing through the orchestrator. See `specs/n8n-bridge-spec.md` for the full specification.
 
 ## Costs
 

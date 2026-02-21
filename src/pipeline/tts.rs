@@ -25,10 +25,7 @@ impl TtsClient {
         text: &str,
         voice_id: &str,
     ) -> Result<Vec<u8>, TtsError> {
-        let url = format!(
-            "https://api.elevenlabs.io/v1/text-to-speech/{}",
-            voice_id
-        );
+        let url = format!("https://api.elevenlabs.io/v1/text-to-speech/{}", voice_id);
 
         let body = serde_json::json!({
             "text": text,

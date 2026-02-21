@@ -43,7 +43,7 @@ impl ClaudeBridge {
             });
 
         let mut cmd = Command::new("claude");
-        cmd.arg("-p").arg(prompt).arg("--output-format").arg("text");
+        cmd.arg("-p").arg(prompt).arg("--output-format").arg("json");
 
         if self.dangerously_skip_permissions {
             cmd.arg("--dangerously-skip-permissions");
@@ -73,22 +73,36 @@ impl ClaudeBridge {
             )));
         }
 
-        let response = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let parsed: ClaudeJsonOutput = serde_json::from_str(&stdout)
+            .map_err(|e| ClaudeError::Cli(format!("Failed to parse JSON: {e}")))?;
 
-        // For now, we don't parse conversation ID from claude CLI output.
-        // Multi-turn via -r requires the session ID which claude -p doesn't
-        // currently expose in a machine-readable way. Each call turn is
-        // independent. This is a known limitation to revisit.
+        // Store session ID for conversation continuity across turns
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get_mut(call_sid) {
+            session.conversation_id = Some(parsed.session_id);
+            session.last_used = Instant::now();
+        }
 
-        tracing::info!(call_sid, response_len = response.len(), "Claude responded");
+        tracing::info!(
+            call_sid,
+            response_len = parsed.result.len(),
+            "Claude responded"
+        );
 
-        Ok(response)
+        Ok(parsed.result)
     }
 
     /// Remove a session (call ended).
     pub async fn end_session(&self, call_sid: &str) {
         self.sessions.lock().await.remove(call_sid);
     }
+}
+
+#[derive(serde::Deserialize)]
+struct ClaudeJsonOutput {
+    result: String,
+    session_id: String,
 }
 
 #[derive(Debug, thiserror::Error)]

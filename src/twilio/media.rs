@@ -94,7 +94,7 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
     let mut call_sid = String::new();
     let mut stream_sid = String::new();
 
-    // Suppress VAD while Morpheus is speaking (greeting or response).
+    // Suppress VAD while Trinity is speaking (greeting or response).
     // Set to true before send_audio, cleared on Twilio Mark event.
     let speaking = Arc::new(AtomicBool::new(false));
 
@@ -158,7 +158,7 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                             }
                         };
 
-                        // Suppress VAD while Morpheus is speaking
+                        // Suppress VAD while Trinity is speaking
                         if speaking.load(Ordering::Relaxed) {
                             continue;
                         }
@@ -287,7 +287,17 @@ async fn run_pipeline(
     tracing::info!(call_sid, transcript = %trimmed, "Transcribed");
 
     // 3. Text → Claude response
-    let response = state.claude.send(call_sid, &transcript).await?;
+    // On outbound calls with context, prepend it to the first transcript
+    let prompt = {
+        let mut contexts = state.call_contexts.lock().await;
+        if let Some(ctx) = contexts.remove(call_sid) {
+            tracing::info!(call_sid, "Injecting call context into first prompt");
+            format!("[Call context: {}]\n\nThe caller said: {}", ctx, trimmed)
+        } else {
+            trimmed.to_string()
+        }
+    };
+    let response = state.claude.send(call_sid, &prompt).await?;
     tracing::info!(call_sid, response_len = response.len(), "Claude response");
 
     // 4. Detect language and select voice
@@ -305,7 +315,10 @@ async fn run_pipeline(
     };
 
     // 5. Response → TTS audio
-    let tts_pcm_bytes = state.tts.synthesize_with_voice(&response, &voice_id).await?;
+    let tts_pcm_bytes = state
+        .tts
+        .synthesize_with_voice(&response, &voice_id)
+        .await?;
     tracing::debug!(tts_bytes = tts_pcm_bytes.len(), "TTS audio generated");
 
     Ok(Some(tts_pcm_bytes))

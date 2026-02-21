@@ -12,6 +12,9 @@ pub struct CallRequest {
     pub to: String,
     /// Optional initial message to speak when the call is answered
     pub message: Option<String>,
+    /// Optional context for the AI — why this call is being made.
+    /// Injected into the first Claude prompt so it knows the reason for calling.
+    pub context: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -49,14 +52,25 @@ pub async fn handle_call(
     tracing::info!(to = %req.to, "Outbound call requested");
 
     match state.twilio.call(&req.to, req.message.as_deref()).await {
-        Ok(call_sid) => (
-            StatusCode::OK,
-            Json(CallResponse {
-                call_sid,
-                status: "initiated".to_string(),
-            }),
-        )
-            .into_response(),
+        Ok(call_sid) => {
+            // Store context for this call so Claude knows why it's calling
+            if let Some(ctx) = req.context {
+                state
+                    .call_contexts
+                    .lock()
+                    .await
+                    .insert(call_sid.clone(), ctx);
+                tracing::info!(call_sid = %call_sid, "Stored call context");
+            }
+            (
+                StatusCode::OK,
+                Json(CallResponse {
+                    call_sid,
+                    status: "initiated".to_string(),
+                }),
+            )
+                .into_response()
+        }
         Err(e) => {
             tracing::error!("Failed to initiate call: {e}");
             (
