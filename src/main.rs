@@ -128,6 +128,11 @@ async fn server() {
         claude: Arc::new(ClaudeBridge::new(
             config.claude.session_timeout_secs,
             config.claude.dangerously_skip_permissions,
+            config
+                .claude
+                .soul_path
+                .as_ref()
+                .map(std::path::PathBuf::from),
         )),
         twilio: Arc::new(TwilioClient::new(
             &config.twilio,

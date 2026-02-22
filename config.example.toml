@@ -28,6 +28,8 @@ session_timeout_secs = 300
 greeting = "Hello, this is Trinity"
 # Allow claude CLI to run tools without permission prompts (use with caution)
 dangerously_skip_permissions = false
+# Path to soul document injected as system prompt on every turn
+# soul_path = "/path/to/SOUL.md"
 
 [api]
 # Secret loaded from .env (TRINITY_API_TOKEN)
