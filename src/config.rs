@@ -79,6 +79,14 @@ pub struct VadConfig {
     pub silence_threshold_ms: u64,
     #[serde(default = "default_energy_threshold")]
     pub energy_threshold: u16,
+    #[serde(default)]
+    pub adaptive_threshold: bool,
+    #[serde(default = "default_noise_floor_multiplier")]
+    pub noise_floor_multiplier: f64,
+    #[serde(default = "default_noise_floor_decay")]
+    pub noise_floor_decay: f64,
+    #[serde(default)]
+    pub max_utterance_secs: Option<u64>,
 }
 
 fn default_silence_threshold() -> u64 {
@@ -87,6 +95,14 @@ fn default_silence_threshold() -> u64 {
 
 fn default_energy_threshold() -> u16 {
     50
+}
+
+fn default_noise_floor_multiplier() -> f64 {
+    3.0
+}
+
+fn default_noise_floor_decay() -> f64 {
+    0.995
 }
 
 #[derive(Debug, Deserialize, Clone, Default)]

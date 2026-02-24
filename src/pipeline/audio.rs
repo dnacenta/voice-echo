@@ -108,6 +108,118 @@ pub fn rms_energy(pcm_data: &[i16]) -> f64 {
     (sum / pcm_data.len() as f64).sqrt()
 }
 
+/// Second-order IIR (biquad) filter using Audio EQ Cookbook formulas.
+struct BiquadFilter {
+    b0: f64,
+    b1: f64,
+    b2: f64,
+    a1: f64,
+    a2: f64,
+    x1: f64,
+    x2: f64,
+    y1: f64,
+    y2: f64,
+}
+
+impl BiquadFilter {
+    /// Create a highpass filter (Butterworth, Q=0.7071).
+    fn highpass(cutoff_hz: f64, sample_rate: f64) -> Self {
+        let w0 = 2.0 * std::f64::consts::PI * cutoff_hz / sample_rate;
+        let cos_w0 = w0.cos();
+        let alpha = w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
+
+        let b0 = (1.0 + cos_w0) / 2.0;
+        let b1 = -(1.0 + cos_w0);
+        let b2 = (1.0 + cos_w0) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha;
+
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
+    }
+
+    /// Create a lowpass filter (Butterworth, Q=0.7071).
+    fn lowpass(cutoff_hz: f64, sample_rate: f64) -> Self {
+        let w0 = 2.0 * std::f64::consts::PI * cutoff_hz / sample_rate;
+        let cos_w0 = w0.cos();
+        let alpha = w0.sin() / (2.0 * std::f64::consts::FRAC_1_SQRT_2);
+
+        let b0 = (1.0 - cos_w0) / 2.0;
+        let b1 = 1.0 - cos_w0;
+        let b2 = (1.0 - cos_w0) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * cos_w0;
+        let a2 = 1.0 - alpha;
+
+        Self {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+            x1: 0.0,
+            x2: 0.0,
+            y1: 0.0,
+            y2: 0.0,
+        }
+    }
+
+    /// Process a single sample.
+    fn process(&mut self, x: f64) -> f64 {
+        let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
+            - self.a1 * self.y1
+            - self.a2 * self.y2;
+
+        self.x2 = self.x1;
+        self.x1 = x;
+        self.y2 = self.y1;
+        self.y1 = y;
+
+        y
+    }
+}
+
+/// Bandpass filter chain (highpass + lowpass) for isolating speech frequencies.
+///
+/// Strips low-frequency noise (engine rumble, road noise) and high-frequency
+/// artifacts while preserving the 300–3400Hz telephony speech band.
+pub struct BandpassFilter {
+    highpass: BiquadFilter,
+    lowpass: BiquadFilter,
+}
+
+impl BandpassFilter {
+    /// Create a bandpass filter for the given frequency range at the sample rate.
+    pub fn new(low_hz: f64, high_hz: f64, sample_rate: f64) -> Self {
+        Self {
+            highpass: BiquadFilter::highpass(low_hz, sample_rate),
+            lowpass: BiquadFilter::lowpass(high_hz, sample_rate),
+        }
+    }
+
+    /// Filter PCM samples, returning only energy in the target band.
+    /// Used for VAD energy calculation — does not modify the original buffer.
+    pub fn filter(&mut self, samples: &[i16]) -> Vec<i16> {
+        samples
+            .iter()
+            .map(|&s| {
+                let filtered = self.lowpass.process(self.highpass.process(s as f64));
+                filtered.clamp(-32768.0, 32767.0) as i16
+            })
+            .collect()
+    }
+}
+
 /// Errors that can occur when loading hold music.
 #[derive(Debug, thiserror::Error)]
 pub enum HoldMusicError {
