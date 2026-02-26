@@ -44,10 +44,10 @@ pub fn run() {
     println!("\n  {} Groq (Whisper STT)", ansi::bold(">>"));
     let groq_api_key = prompts::ask_secret("API Key");
 
-    // ElevenLabs
-    println!("\n  {} ElevenLabs (TTS)", ansi::bold(">>"));
-    let elevenlabs_api_key = prompts::ask_secret("API Key");
-    let elevenlabs_voice_id = prompts::ask("Voice ID", Some("EST9Ui6982FZPSi7gCHi"));
+    // Inworld TTS
+    println!("\n  {} Inworld TTS", ansi::bold(">>"));
+    let inworld_api_key = prompts::ask_secret("API Key (base64 credential)");
+    let inworld_voice_id = prompts::ask("Voice ID", Some("Olivia"));
 
     // Server
     println!("\n  {} Server", ansi::bold(">>"));
@@ -63,8 +63,8 @@ pub fn run() {
         twilio_auth_token,
         twilio_phone_number,
         groq_api_key,
-        elevenlabs_api_key,
-        elevenlabs_voice_id,
+        inworld_api_key,
+        inworld_voice_id,
         external_url: external_url.clone(),
         api_token,
     };

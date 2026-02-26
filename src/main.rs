@@ -122,8 +122,9 @@ async fn server() {
             config.groq.model.clone(),
         )),
         tts: Arc::new(TtsClient::new(
-            config.elevenlabs.api_key.clone(),
-            config.elevenlabs.voice_id.clone(),
+            config.inworld.api_key.clone(),
+            config.inworld.voice_id.clone(),
+            config.inworld.model.clone(),
         )),
         claude: Arc::new(ClaudeBridge::new(
             config.claude.session_timeout_secs,

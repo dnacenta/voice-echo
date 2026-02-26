@@ -225,7 +225,7 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
     }
 }
 
-/// Full pipeline: PCM → WAV → STT → Claude → TTS → mu-law → channel.
+/// Full pipeline: PCM → WAV → STT → Claude → TTS → channel.
 async fn process_utterance(
     pcm_data: &[i16],
     call_sid: &str,
@@ -259,12 +259,12 @@ async fn process_utterance(
     // Only clear + send when we have a real response. Ghost utterances
     // (empty transcript, hallucination) must NOT clear Twilio's buffer —
     // a previous response may still be playing.
-    if let Some(tts_pcm_bytes) = result? {
+    if let Some(tts_mulaw) = result? {
         if state.hold_music.is_some() {
             send_clear(stream_sid, tx).await?;
         }
         // speaking stays true — Mark event will reset it after playback
-        send_audio(stream_sid, &tts_pcm_bytes, tx).await?;
+        send_audio(stream_sid, &tts_mulaw, tx).await?;
     } else {
         // No audio to send, no Mark coming — resume VAD now
         speaking.store(false, Ordering::Relaxed);
@@ -326,44 +326,21 @@ async fn run_pipeline(
     let response = state.claude.send(call_sid, &prompt).await?;
     tracing::info!(call_sid, response_len = response.len(), "Claude response");
 
-    // 4. Detect language and select voice
-    let voice_id = match state.config.elevenlabs.spanish_voice_id {
-        Some(ref id) => {
-            let info = whatlang::detect(&response);
-            if info.is_some_and(|i| i.lang() == whatlang::Lang::Spa && i.is_reliable()) {
-                tracing::info!(call_sid, "Detected Spanish, using spanish voice");
-                id.clone()
-            } else {
-                state.config.elevenlabs.voice_id.clone()
-            }
-        }
-        None => state.config.elevenlabs.voice_id.clone(),
-    };
+    // 4. Response → TTS audio (raw mu-law bytes from Inworld)
+    let tts_mulaw = state.tts.synthesize(&response).await?;
+    tracing::debug!(tts_bytes = tts_mulaw.len(), "TTS audio generated");
 
-    // 5. Response → TTS audio
-    let tts_pcm_bytes = state
-        .tts
-        .synthesize_with_voice(&response, &voice_id)
-        .await?;
-    tracing::debug!(tts_bytes = tts_pcm_bytes.len(), "TTS audio generated");
-
-    Ok(Some(tts_pcm_bytes))
+    Ok(Some(tts_mulaw))
 }
 
-/// Send raw PCM bytes (little-endian i16) as mu-law media messages via the channel.
+/// Send raw mu-law bytes as media messages via the channel.
 async fn send_audio(
     stream_sid: &str,
-    pcm_bytes: &[u8],
+    mulaw_bytes: &[u8],
     tx: &mpsc::Sender<Message>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let pcm_samples: Vec<i16> = pcm_bytes
-        .chunks_exact(2)
-        .map(|c| i16::from_le_bytes([c[0], c[1]]))
-        .collect();
-    let mulaw_data = audio::encode_mulaw(&pcm_samples);
-
-    // Send in ~20ms chunks (160 samples at 8kHz)
-    for chunk in mulaw_data.chunks(160) {
+    // Send in ~20ms chunks (160 bytes at 8kHz mu-law)
+    for chunk in mulaw_bytes.chunks(160) {
         let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
         let msg = serde_json::json!({
             "event": "media",
@@ -488,9 +465,9 @@ async fn send_greeting(
         return Ok(());
     }
     tracing::info!("Sending greeting");
-    let pcm_bytes = state.tts.synthesize(greeting).await?;
+    let mulaw = state.tts.synthesize(greeting).await?;
     speaking.store(true, Ordering::Relaxed);
-    send_audio(stream_sid, &pcm_bytes, tx).await
+    send_audio(stream_sid, &mulaw, tx).await
 }
 
 #[cfg(test)]
@@ -529,7 +506,7 @@ async fn send_error_message(
     const FALLBACK: &str = "Sorry, I couldn't process that. Please try again.";
 
     match state.tts.synthesize(FALLBACK).await {
-        Ok(pcm_bytes) => send_audio(stream_sid, &pcm_bytes, tx).await,
+        Ok(mulaw) => send_audio(stream_sid, &mulaw, tx).await,
         Err(e) => {
             // TTS itself is down — nothing we can do
             tracing::error!("TTS unavailable for error message: {e}");

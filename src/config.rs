@@ -6,7 +6,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub twilio: TwilioConfig,
     pub groq: GroqConfig,
-    pub elevenlabs: ElevenLabsConfig,
+    pub inworld: InworldConfig,
     pub claude: ClaudeConfig,
     pub vad: VadConfig,
     #[serde(default)]
@@ -41,16 +41,20 @@ fn default_groq_model() -> String {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ElevenLabsConfig {
+pub struct InworldConfig {
     pub api_key: String,
     #[serde(default = "default_voice_id")]
     pub voice_id: String,
-    #[serde(default)]
-    pub spanish_voice_id: Option<String>,
+    #[serde(default = "default_inworld_model")]
+    pub model: String,
 }
 
 fn default_voice_id() -> String {
-    "EST9Ui6982FZPSi7gCHi".to_string()
+    "Olivia".to_string()
+}
+
+fn default_inworld_model() -> String {
+    "inworld-tts-1.5-max".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -162,8 +166,8 @@ impl Config {
         if let Ok(v) = std::env::var("GROQ_API_KEY") {
             config.groq.api_key = v;
         }
-        if let Ok(v) = std::env::var("ELEVENLABS_API_KEY") {
-            config.elevenlabs.api_key = v;
+        if let Ok(v) = std::env::var("INWORLD_API_KEY") {
+            config.inworld.api_key = v;
         }
         if let Ok(v) = std::env::var("ECHO_API_TOKEN") {
             config.api.token = v;

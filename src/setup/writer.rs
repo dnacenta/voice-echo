@@ -11,8 +11,8 @@ pub struct SetupValues {
     pub twilio_auth_token: String,
     pub twilio_phone_number: String,
     pub groq_api_key: String,
-    pub elevenlabs_api_key: String,
-    pub elevenlabs_voice_id: String,
+    pub inworld_api_key: String,
+    pub inworld_voice_id: String,
     pub external_url: String,
     pub api_token: String,
 }
@@ -78,10 +78,11 @@ phone_number = "{phone}"
 api_key = ""
 model = "whisper-large-v3-turbo"
 
-[elevenlabs]
-# Secret loaded from .env (ELEVENLABS_API_KEY)
+[inworld]
+# Secret loaded from .env (INWORLD_API_KEY)
 api_key = ""
 voice_id = "{voice_id}"
+model = "inworld-tts-1.5-max"
 
 [claude]
 session_timeout_secs = 300
@@ -101,7 +102,7 @@ energy_threshold = 50
 # volume = 0.3
 "#,
         phone = values.twilio_phone_number,
-        voice_id = values.elevenlabs_voice_id,
+        voice_id = values.inworld_voice_id,
     );
 
     fs::write(path, content).expect("Failed to write config.toml");
@@ -117,8 +118,8 @@ TWILIO_AUTH_TOKEN={twilio_token}
 # Groq (Whisper STT)
 GROQ_API_KEY={groq_key}
 
-# ElevenLabs (TTS)
-ELEVENLABS_API_KEY={elevenlabs_key}
+# Inworld (TTS)
+INWORLD_API_KEY={inworld_key}
 
 # API bearer token for /api/* endpoints
 ECHO_API_TOKEN={api_token}
@@ -129,7 +130,7 @@ SERVER_EXTERNAL_URL={external_url}
         twilio_sid = values.twilio_account_sid,
         twilio_token = values.twilio_auth_token,
         groq_key = values.groq_api_key,
-        elevenlabs_key = values.elevenlabs_api_key,
+        inworld_key = values.inworld_api_key,
         api_token = values.api_token,
         external_url = values.external_url,
     );
