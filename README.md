@@ -7,7 +7,7 @@
 
 Voice interface for Claude Code over the phone. Call in and talk to Claude, or trigger outbound calls from n8n / automation workflows.
 
-Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, ElevenLabs for text-to-speech, and the Claude Code CLI for reasoning.
+Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Inworld for text-to-speech, and the Claude Code CLI for reasoning.
 
 ## Architecture
 
@@ -21,9 +21,8 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
                          │                         │           │
                          │                    Claude CLI        │
                          │                         │           │
-                         │                    TTS (ElevenLabs)  │
-                         │                         │           │
-                         │                    mu-law encode     │
+                         │                    TTS (Inworld)     │
+                         │                     mulaw 8kHz       │
                          └─────────────────────────────────────┘
 ```
 
@@ -85,7 +84,7 @@ Built in Rust. Uses Twilio for telephony, Groq Whisper for speech-to-text, Eleve
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 - [Twilio](https://www.twilio.com/) account with a phone number
 - [Groq](https://console.groq.com/) API key (free tier works)
-- [ElevenLabs](https://elevenlabs.io/) API key (free tier: ~10k chars/month)
+- [Inworld](https://inworld.ai/tts) API key (sign up at platform.inworld.ai)
 - A server with a public HTTPS URL (for Twilio webhooks)
 - nginx (recommended, for TLS termination and WebSocket proxying)
 
@@ -108,7 +107,7 @@ cargo build --release
 The wizard walks you through the entire setup:
 
 - Checks that `rustc`, `claude`, and `openssl` are available
-- Prompts for Twilio, Groq, and ElevenLabs credentials (masked input)
+- Prompts for Twilio, Groq, and Inworld credentials (masked input)
 - Asks for your server's external URL
 - Generates an API token for the outbound call endpoint
 - Writes `~/.voice-echo/config.toml`
@@ -165,9 +164,9 @@ You can override the config directory with `ECHO_CONFIG=/path/to/config.toml`.
 | `twilio`      | `phone_number`         | --                        | Your Twilio phone number (E.164)                 |
 | `groq`        | `api_key`              | --                        | Groq API key (overridden by env var)             |
 | `groq`        | `model`                | `whisper-large-v3-turbo`  | Whisper model to use                             |
-| `elevenlabs`  | `api_key`              | --                        | ElevenLabs API key (overridden by env var)       |
-| `elevenlabs`  | `voice_id`             | `EST9Ui6982FZPSi7gCHi`   | ElevenLabs voice ID                              |
-| `elevenlabs`  | `spanish_voice_id`     | --                        | Optional voice ID for Spanish (auto-detected)    |
+| `inworld`     | `api_key`              | --                        | Inworld API key (overridden by env var)          |
+| `inworld`     | `voice_id`             | `Olivia`                  | Inworld voice name                               |
+| `inworld`     | `model`                | `inworld-tts-1.5-max`    | Inworld TTS model                                |
 | `claude`      | `session_timeout_secs` | `300`                     | Conversation session timeout                     |
 | `claude`      | `greeting`             | `Hello, this is Echo`  | Initial TTS greeting when a call connects        |
 | `claude`      | `dangerously_skip_permissions` | `false`           | Allow Claude CLI to run tools without prompting (see [Customizing Claude](#customizing-claude)) |
@@ -186,7 +185,7 @@ All secrets can be set via env vars (recommended) instead of config.toml:
 | `TWILIO_ACCOUNT_SID`   | `twilio.account_sid`       |
 | `TWILIO_AUTH_TOKEN`    | `twilio.auth_token`        |
 | `GROQ_API_KEY`         | `groq.api_key`             |
-| `ELEVENLABS_API_KEY`   | `elevenlabs.api_key`       |
+| `INWORLD_API_KEY`      | `inworld.api_key`          |
 | `ECHO_API_TOKEN`   | `api.token`                |
 | `SERVER_EXTERNAL_URL`  | `server.external_url`      |
 | `ECHO_CONFIG` | Config file path            |
@@ -304,7 +303,7 @@ Any n8n workflow can trigger calls by routing through the orchestrator. See `spe
 |--------------|-------------------------------|----------------------------------|
 | Twilio       | Trial credit (~$15)           | ~$1.15/mo number + per-minute    |
 | Groq         | Free (rate-limited)           | Usage-based                      |
-| ElevenLabs   | ~10k chars/month              | From $5/month                    |
+| Inworld TTS  | Free tier available           | ~$5/1M chars                     |
 | Claude Code  | Included with Max plan        | Or API usage                     |
 
 For personal use with a few calls a day, the running cost is minimal beyond the Twilio number.
@@ -327,7 +326,7 @@ Make sure the `claude` CLI is installed, in `PATH`, and authenticated. Run `clau
 The VAD energy threshold may be too high for your microphone or phone quality. Lower `vad.energy_threshold` (try `30` or `20`). Check `RUST_LOG=voice_echo=debug` for VAD activity logs.
 
 **TTS sounds robotic or uses the wrong voice**
-Verify your `elevenlabs.voice_id` is valid. You can list voices with the [ElevenLabs API](https://api.elevenlabs.io/v1/voices). Free-tier voices have lower quality than paid.
+Verify your `inworld.voice_id` is valid. Preview voices at the [Inworld TTS Playground](https://inworld.ai/tts). You can also create custom voices in Inworld Studio.
 
 ## Contributing
 
