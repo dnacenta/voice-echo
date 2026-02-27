@@ -1,6 +1,8 @@
 mod api;
 mod config;
+mod discord;
 mod pipeline;
+pub mod registry;
 mod setup;
 mod twilio;
 
@@ -16,12 +18,32 @@ use tower_http::trace::TraceLayer;
 
 use config::Config;
 use pipeline::audio;
+use pipeline::bridge::BridgeClient;
 use pipeline::claude::ClaudeBridge;
 use pipeline::stt::SttClient;
 use pipeline::tts::TtsClient;
+use registry::CallRegistry;
 use twilio::outbound::TwilioClient;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// How voice-echo gets Claude responses: either locally or via bridge-echo.
+#[derive(Clone)]
+pub enum Brain {
+    /// Direct Claude Code CLI invocation (standalone mode).
+    Local(Arc<ClaudeBridge>),
+    /// HTTP client to bridge-echo multiplexer (multiplexed mode).
+    Bridge(Arc<BridgeClient>),
+}
+
+/// Metadata for outbound calls — context for Claude and reason for the greeting.
+#[derive(Clone, Debug)]
+pub struct CallMeta {
+    /// Full context injected into Claude's first prompt (consumed on first utterance).
+    pub context: Option<String>,
+    /// Short reason for calling, used in the outbound greeting TTS.
+    pub reason: Option<String>,
+}
 
 /// Shared application state accessible from all handlers.
 #[derive(Clone)]
@@ -29,13 +51,15 @@ pub struct AppState {
     pub config: Config,
     pub stt: Arc<SttClient>,
     pub tts: Arc<TtsClient>,
-    pub claude: Arc<ClaudeBridge>,
+    pub brain: Brain,
     pub twilio: Arc<TwilioClient>,
     /// Pre-converted mu-law hold music data, if configured.
     pub hold_music: Option<Arc<Vec<u8>>>,
-    /// Context for outbound calls, keyed by call_sid.
-    /// Consumed on first utterance so Claude knows why it called.
-    pub call_contexts: Arc<Mutex<HashMap<String, String>>>,
+    /// Metadata for outbound calls, keyed by call_sid.
+    /// Reason is peeked at for the greeting; context is consumed on first utterance.
+    pub call_metas: Arc<Mutex<HashMap<String, CallMeta>>>,
+    /// Registry of active calls for cross-channel audio injection.
+    pub call_registry: CallRegistry,
 }
 
 fn main() {
@@ -115,6 +139,26 @@ async fn server() {
         }
     });
 
+    // Build brain — bridge-echo multiplexer if configured, local Claude otherwise
+    let brain = if let Some(ref url) = config.claude.bridge_url {
+        tracing::info!(url = %url, "Using bridge-echo multiplexer");
+        Brain::Bridge(Arc::new(BridgeClient::new(
+            url,
+            config.identity.caller_name.clone(),
+        )))
+    } else {
+        tracing::info!("Using local Claude Code CLI");
+        Brain::Local(Arc::new(ClaudeBridge::new(
+            config.claude.session_timeout_secs,
+            config.claude.dangerously_skip_permissions,
+            config
+                .claude
+                .self_path
+                .as_ref()
+                .map(std::path::PathBuf::from),
+        )))
+    };
+
     // Build shared state
     let state = AppState {
         stt: Arc::new(SttClient::new(
@@ -126,22 +170,15 @@ async fn server() {
             config.inworld.voice_id.clone(),
             config.inworld.model.clone(),
         )),
-        claude: Arc::new(ClaudeBridge::new(
-            config.claude.session_timeout_secs,
-            config.claude.dangerously_skip_permissions,
-            config
-                .claude
-                .self_path
-                .as_ref()
-                .map(std::path::PathBuf::from),
-        )),
+        brain,
         twilio: Arc::new(TwilioClient::new(
             &config.twilio,
             &config.server.external_url,
         )),
         config: config.clone(),
         hold_music,
-        call_contexts: Arc::new(Mutex::new(HashMap::new())),
+        call_metas: Arc::new(Mutex::new(HashMap::new())),
+        call_registry: CallRegistry::new(),
     };
 
     // Build router
@@ -154,8 +191,15 @@ async fn server() {
         )
         // Twilio media stream (WebSocket)
         .route("/twilio/media", get(twilio::media::handle_media_upgrade))
+        // Discord voice sidecar stream (WebSocket)
+        .route(
+            "/discord-stream",
+            get(discord::stream::handle_discord_upgrade),
+        )
         // Outbound call API (for n8n)
         .route("/api/call", post(api::outbound::handle_call))
+        // Inject audio into active call (for bridge-echo cross-channel routing)
+        .route("/api/inject", post(api::inject::handle_inject))
         // Health check
         .route("/health", get(health))
         .layer(TraceLayer::new_for_http())

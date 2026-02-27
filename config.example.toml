@@ -21,9 +21,30 @@ api_key = ""
 voice_id = "Olivia"
 model = "inworld-tts-1.5-max"
 
+[identity]
+# Your assistant's name — used in greetings and identity
+name = "Echo"
+# Primary caller's name — used in outbound greetings and bridge sender
+caller_name = "User"
+
+[greetings]
+# Inbound call greetings — one is picked at random. {name} is replaced with identity.name.
+inbound = [
+    "Hello, this is {name}",
+    "Hi there",
+    "{name} here",
+    "Hey, {name} speaking",
+    "Hi, this is {name}",
+]
+# Outbound call greeting template. {caller} = identity.caller_name, {reason} = from call API.
+outbound_template = "Hey {caller}, {reason}"
+# Fallback when outbound call has no reason provided
+outbound_fallback = "Hey {caller}, I wanted to talk to you about something"
+
 [claude]
 # Uses `claude` CLI from PATH — no API key needed
 session_timeout_secs = 300
+# Deprecated: use [greetings].inbound instead. Still works for backward compatibility.
 greeting = "Hello, this is Echo"
 # Allow claude CLI to run tools without permission prompts (use with caution)
 dangerously_skip_permissions = false

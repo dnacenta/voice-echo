@@ -22,27 +22,14 @@ impl TwilioClient {
 
     /// Initiate an outbound call. Twilio will call `to`, and when answered,
     /// POST to our /twilio/voice/outbound webhook which provides TwiML
-    /// to connect the media stream (optionally speaking an initial message).
-    pub async fn call(
-        &self,
-        to: &str,
-        initial_message: Option<&str>,
-    ) -> Result<String, OutboundError> {
+    /// to connect the media stream. The greeting is handled by the stream via TTS.
+    pub async fn call(&self, to: &str) -> Result<String, OutboundError> {
         let url = format!(
             "https://api.twilio.com/2010-04-01/Accounts/{}/Calls.json",
             self.account_sid
         );
 
-        // Build the webhook URL, encoding the initial message as a query param
-        let webhook_url = if let Some(msg) = initial_message {
-            format!(
-                "{}/twilio/voice/outbound?message={}",
-                self.external_url,
-                urlencoded(msg)
-            )
-        } else {
-            format!("{}/twilio/voice/outbound", self.external_url)
-        };
+        let webhook_url = format!("{}/twilio/voice/outbound", self.external_url);
 
         let params = [
             ("To", to),
@@ -75,18 +62,6 @@ impl TwilioClient {
         tracing::info!(to, call_sid = %call_sid, "Outbound call initiated");
         Ok(call_sid)
     }
-}
-
-/// Simple URL encoding for query parameter values.
-fn urlencoded(s: &str) -> String {
-    s.bytes()
-        .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                String::from(b as char)
-            }
-            _ => format!("%{b:02X}"),
-        })
-        .collect()
 }
 
 #[derive(Debug, thiserror::Error)]

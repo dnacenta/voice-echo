@@ -4,17 +4,21 @@ use axum::response::IntoResponse;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::AppState;
+use crate::{AppState, CallMeta};
 
 #[derive(Debug, Deserialize)]
 pub struct CallRequest {
     /// Phone number to call (E.164 format, e.g., "+34612345678")
     pub to: String,
-    /// Optional initial message to speak when the call is answered
+    /// Deprecated — kept for API backward compatibility. No longer used.
+    #[allow(dead_code)]
     pub message: Option<String>,
     /// Optional context for the AI — why this call is being made.
     /// Injected into the first Claude prompt so it knows the reason for calling.
     pub context: Option<String>,
+    /// Short reason for calling, used in the outbound greeting.
+    /// e.g., "I found something interesting in the logs"
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -51,16 +55,18 @@ pub async fn handle_call(
 
     tracing::info!(to = %req.to, "Outbound call requested");
 
-    match state.twilio.call(&req.to, req.message.as_deref()).await {
+    match state.twilio.call(&req.to).await {
         Ok(call_sid) => {
-            // Store context for this call so Claude knows why it's calling
-            if let Some(ctx) = req.context {
-                state
-                    .call_contexts
-                    .lock()
-                    .await
-                    .insert(call_sid.clone(), ctx);
-                tracing::info!(call_sid = %call_sid, "Stored call context");
+            // Store call metadata (context + reason) for this call
+            if req.context.is_some() || req.reason.is_some() {
+                state.call_metas.lock().await.insert(
+                    call_sid.clone(),
+                    CallMeta {
+                        context: req.context,
+                        reason: req.reason,
+                    },
+                );
+                tracing::info!(call_sid = %call_sid, "Stored call metadata");
             }
             (
                 StatusCode::OK,
@@ -85,7 +91,10 @@ pub async fn handle_call(
 }
 
 #[allow(clippy::result_large_err)]
-fn check_auth(headers: &HeaderMap, expected_token: &str) -> Result<(), axum::response::Response> {
+pub fn check_auth(
+    headers: &HeaderMap,
+    expected_token: &str,
+) -> Result<(), axum::response::Response> {
     if expected_token.is_empty() {
         tracing::warn!("API token not configured — rejecting request");
         return Err((

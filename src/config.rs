@@ -13,6 +13,10 @@ pub struct Config {
     pub api: ApiConfig,
     #[serde(default)]
     pub hold_music: Option<HoldMusicConfig>,
+    #[serde(default)]
+    pub identity: IdentityConfig,
+    #[serde(default)]
+    pub greetings: GreetingsConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -67,6 +71,10 @@ pub struct ClaudeConfig {
     pub dangerously_skip_permissions: bool,
     #[serde(default)]
     pub self_path: Option<String>,
+    /// URL of bridge-echo multiplexer. When set, voice-echo forwards
+    /// transcripts to bridge-echo instead of spawning its own Claude Code process.
+    #[serde(default)]
+    pub bridge_url: Option<String>,
 }
 
 fn default_session_timeout() -> u64 {
@@ -127,6 +135,63 @@ fn default_hold_music_volume() -> f32 {
     0.3
 }
 
+#[derive(Debug, Deserialize, Clone)]
+pub struct IdentityConfig {
+    #[serde(default = "default_identity_name")]
+    pub name: String,
+    #[serde(default = "default_caller_name")]
+    pub caller_name: String,
+}
+
+impl Default for IdentityConfig {
+    fn default() -> Self {
+        Self {
+            name: default_identity_name(),
+            caller_name: default_caller_name(),
+        }
+    }
+}
+
+fn default_identity_name() -> String {
+    "Echo".to_string()
+}
+
+fn default_caller_name() -> String {
+    "User".to_string()
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct GreetingsConfig {
+    #[serde(default = "default_inbound_greetings")]
+    pub inbound: Vec<String>,
+    #[serde(default = "default_outbound_template")]
+    pub outbound_template: String,
+    #[serde(default = "default_outbound_fallback")]
+    pub outbound_fallback: String,
+}
+
+impl Default for GreetingsConfig {
+    fn default() -> Self {
+        Self {
+            inbound: default_inbound_greetings(),
+            outbound_template: default_outbound_template(),
+            outbound_fallback: default_outbound_fallback(),
+        }
+    }
+}
+
+fn default_inbound_greetings() -> Vec<String> {
+    vec!["Hello, this is {name}".to_string()]
+}
+
+fn default_outbound_template() -> String {
+    "Hey {caller}, {reason}".to_string()
+}
+
+fn default_outbound_fallback() -> String {
+    "Hey {caller}, I wanted to talk to you about something".to_string()
+}
+
 impl Config {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         // Load .env file from same directory as config.toml
@@ -174,6 +239,15 @@ impl Config {
         }
         if let Ok(v) = std::env::var("SERVER_EXTERNAL_URL") {
             config.server.external_url = v;
+        }
+
+        // Backward compat: if [greetings] was not set but [claude].greeting was
+        // customized, use it as the sole inbound greeting template.
+        if config.greetings.inbound == default_inbound_greetings()
+            && config.claude.greeting != default_greeting()
+            && !config.claude.greeting.is_empty()
+        {
+            config.greetings.inbound = vec![config.claude.greeting.clone()];
         }
 
         Ok(config)
