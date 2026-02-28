@@ -61,8 +61,10 @@ fn default_inworld_model() -> String {
 pub struct ClaudeConfig {
     #[serde(default = "default_session_timeout")]
     pub session_timeout_secs: u64,
-    #[serde(default = "default_greeting")]
+    #[serde(default)]
     pub greeting: String,
+    #[serde(default = "default_name")]
+    pub name: String,
     #[serde(default)]
     pub dangerously_skip_permissions: bool,
     #[serde(default)]
@@ -73,8 +75,8 @@ fn default_session_timeout() -> u64 {
     300
 }
 
-fn default_greeting() -> String {
-    "Hello, this is Echo".to_string()
+fn default_name() -> String {
+    "Echo".to_string()
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -453,19 +453,23 @@ fn is_whisper_hallucination(transcript: &str) -> bool {
     WHISPER_HALLUCINATIONS.iter().any(|h| lower == *h)
 }
 
-/// Speak the configured greeting when a call connects.
+/// Speak a greeting when a call connects.
+///
+/// If `greeting` is set in config, uses that exact text every time.
+/// Otherwise, selects a time-aware greeting from the built-in pool.
 async fn send_greeting(
     stream_sid: &str,
     state: &AppState,
     tx: &mpsc::Sender<Message>,
     speaking: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let greeting = &state.config.claude.greeting;
-    if greeting.is_empty() {
-        return Ok(());
-    }
-    tracing::info!("Sending greeting");
-    let mulaw = state.tts.synthesize(greeting).await?;
+    let greeting = if state.config.claude.greeting.is_empty() {
+        crate::greeting::select_greeting(&state.config.claude.name)
+    } else {
+        state.config.claude.greeting.clone()
+    };
+    tracing::info!(greeting = %greeting, "Sending greeting");
+    let mulaw = state.tts.synthesize(&greeting).await?;
     speaking.store(true, Ordering::Relaxed);
     send_audio(stream_sid, &mulaw, tx).await
 }

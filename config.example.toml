@@ -24,7 +24,10 @@ model = "inworld-tts-1.5-max"
 [claude]
 # Uses `claude` CLI from PATH — no API key needed
 session_timeout_secs = 300
-greeting = "Hello, this is Echo"
+# Entity name used in greetings (default: "Echo")
+name = "Echo"
+# Static greeting override. Leave empty to use rotating time-aware greetings.
+greeting = ""
 # Allow claude CLI to run tools without permission prompts (use with caution)
 dangerously_skip_permissions = false
 # Path to self document injected as system prompt on every turn

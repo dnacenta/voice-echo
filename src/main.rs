@@ -1,5 +1,6 @@
 mod api;
 mod config;
+mod greeting;
 mod pipeline;
 mod setup;
 mod twilio;
