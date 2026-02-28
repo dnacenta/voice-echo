@@ -1,7 +1,7 @@
 # voice-echo
 
 [![CI](https://github.com/dnacenta/voice-echo/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/dnacenta/voice-echo/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/dnacenta/voice-echo)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/github/license/dnacenta/voice-echo)](LICENSE)
 [![Version](https://img.shields.io/github/v/tag/dnacenta/voice-echo?label=version&color=green)](https://github.com/dnacenta/voice-echo/tags)
 [![Rust](https://img.shields.io/badge/rust-1.80%2B-orange)](https://rustup.rs/)
 
@@ -168,11 +168,8 @@ You can override the config directory with `ECHO_CONFIG=/path/to/config.toml`.
 | `inworld`     | `voice_id`             | `Olivia`                  | Inworld voice name                               |
 | `inworld`     | `model`                | `inworld-tts-1.5-max`    | Inworld TTS model                                |
 | `claude`      | `session_timeout_secs` | `300`                     | Conversation session timeout                     |
-| `claude`      | `greeting`             | `Hello, this is Echo`  | Initial TTS greeting when a call connects (legacy — see `greetings` section) |
+| `claude`      | `greeting`             | `Hello, this is Echo`  | Initial TTS greeting when a call connects        |
 | `claude`      | `dangerously_skip_permissions` | `false`           | Allow Claude CLI to run tools without prompting (see [Customizing Claude](#customizing-claude)) |
-| `greetings`   | `inbound`              | `["Hello, this is Echo..."]` | Array of inbound greeting templates (one chosen randomly per call) |
-| `greetings`   | `outbound_template`    | `"Hey, it's Echo..."`  | Greeting template for outbound calls (supports `{reason}` placeholder) |
-| `greetings`   | `outbound_fallback`    | `"Hey, it's Echo..."`  | Fallback greeting when no context is provided    |
 | `api`         | `token`                | --                        | Bearer token for `/api/*` (overridden by env var)|
 | `vad`         | `silence_threshold_ms` | `1500`                    | Silence duration before utterance ends           |
 | `vad`         | `energy_threshold`     | `50`                      | Minimum RMS energy to detect speech              |
@@ -240,15 +237,6 @@ sudo useradd -r -s /usr/sbin/nologin voice-echo
 ```
 
 Then update `User=voice-echo` in the service file and ensure the user has read access to `~/.voice-echo/` and the `claude` CLI.
-
-## API Routes
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| `POST` | `/twilio/voice` | Twilio signature | Inbound call webhook — generates TwiML to start media stream |
-| `POST` | `/twilio/voice/outbound` | Twilio signature | Outbound call webhook — same as inbound but for AI-initiated calls |
-| `POST` | `/api/call` | Bearer token | Trigger an outbound call with optional context |
-| `GET`  | `/health` | None | Health check — returns `200 OK` |
 
 ## Usage
 
@@ -346,7 +334,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for branch naming, commit conventions, an
 
 ## License
 
-[MIT](LICENSE)
+[AGPL-3.0](LICENSE)
 
 ## Acknowledgments
 
