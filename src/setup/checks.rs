@@ -13,7 +13,6 @@ struct CheckResult {
 pub fn run_checks() -> bool {
     let checks = vec![
         check_tool("rustc", &["--version"], "rustc"),
-        check_tool("claude", &["--version"], "claude CLI"),
         check_tool("openssl", &["version"], "openssl"),
     ];
 
