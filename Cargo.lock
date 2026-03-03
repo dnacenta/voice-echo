@@ -235,10 +235,11 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "echo-system-types"
-version = "0.1.0"
-source = "git+https://github.com/dnacenta/echo-system-types?tag=v0.1.0#febdf25f02fc1a470fe412ccc2d2f40e5356f888"
+version = "0.2.0"
+source = "git+https://github.com/dnacenta/echo-system-types?tag=v0.2.0#acbadc847e4af646025d67b968330c07083a0d96"
 dependencies = [
  "serde",
+ "serde_json",
 ]
 
 [[package]]

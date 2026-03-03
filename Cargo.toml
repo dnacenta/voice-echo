@@ -7,7 +7,7 @@ description = "Voice interface for Claude Code via Twilio"
 license = "AGPL-3.0"
 
 [dependencies]
-echo-system-types = { git = "https://github.com/dnacenta/echo-system-types", tag = "v0.1.0" }
+echo-system-types = { git = "https://github.com/dnacenta/echo-system-types", tag = "v0.2.0" }
 axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["full"] }
 tokio-tungstenite = "0.28"
