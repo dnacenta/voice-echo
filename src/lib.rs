@@ -23,13 +23,17 @@ pub mod greeting;
 pub mod pipeline;
 pub mod twilio;
 
+use std::any::Any;
 use std::collections::HashMap;
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::routing::{get, post};
 use axum::Router;
-use echo_system_types::{HealthStatus, SetupPrompt};
+use echo_system_types::plugin::{Plugin, PluginContext, PluginResult, PluginRole};
+use echo_system_types::{HealthStatus, PluginMeta, SetupPrompt};
 use tokio::sync::Mutex;
 use tower_http::trace::TraceLayer;
 
@@ -160,7 +164,7 @@ impl VoiceEcho {
     }
 
     /// Report health status.
-    pub fn health(&self) -> HealthStatus {
+    fn health_check(&self) -> HealthStatus {
         match &self.state {
             Some(_) => HealthStatus::Healthy,
             None => HealthStatus::Down("not started".into()),
@@ -175,7 +179,7 @@ impl VoiceEcho {
     }
 
     /// Configuration prompts for the echo-system init wizard.
-    pub fn setup_prompts() -> Vec<SetupPrompt> {
+    fn get_setup_prompts() -> Vec<SetupPrompt> {
         vec![
             SetupPrompt {
                 key: "external_url".into(),
@@ -248,6 +252,49 @@ impl VoiceEcho {
             .route("/health", get(health_handler))
             .layer(TraceLayer::new_for_http())
             .with_state(state)
+    }
+}
+
+/// Factory function — creates a fully initialized voice-echo plugin.
+pub async fn create(
+    config: &serde_json::Value,
+    _ctx: &PluginContext,
+) -> Result<Box<dyn Plugin>, Box<dyn std::error::Error + Send + Sync>> {
+    let cfg: Config = serde_json::from_value(config.clone())?;
+    Ok(Box::new(VoiceEcho::new(cfg)))
+}
+
+impl Plugin for VoiceEcho {
+    fn meta(&self) -> PluginMeta {
+        PluginMeta {
+            name: "voice-echo".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            description: "Voice interface via Twilio".into(),
+        }
+    }
+
+    fn role(&self) -> PluginRole {
+        PluginRole::Interface
+    }
+
+    fn start(&mut self) -> PluginResult<'_> {
+        Box::pin(async move { self.start().await })
+    }
+
+    fn stop(&mut self) -> PluginResult<'_> {
+        Box::pin(async move { self.stop().await })
+    }
+
+    fn health(&self) -> Pin<Box<dyn Future<Output = HealthStatus> + Send + '_>> {
+        Box::pin(async move { self.health_check() })
+    }
+
+    fn setup_prompts(&self) -> Vec<SetupPrompt> {
+        Self::get_setup_prompts()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
