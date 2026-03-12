@@ -1,6 +1,6 @@
 pub mod audio;
 pub mod bridge;
-pub mod claude;
+pub mod conversation;
 pub mod notify;
 pub mod stt;
 pub mod tts;

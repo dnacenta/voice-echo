@@ -1,26 +1,16 @@
 //! voice-echo — Voice interface for AI entities via Twilio.
 //!
 //! This crate provides a complete voice pipeline: Twilio WebSocket audio streaming,
-//! voice activity detection, speech-to-text (Groq Whisper), LLM bridge (Claude),
+//! voice activity detection, speech-to-text (Groq Whisper), LLM provider,
 //! and text-to-speech (Inworld). It can be used as a standalone binary or as a
 //! library dependency in echo-system.
-//!
-//! # Usage as a library
-//!
-//! ```no_run
-//! use voice_echo::{VoiceEcho, config::Config};
-//!
-//! # fn run() {
-//! let config = Config::load().expect("config");
-//! let mut voice = VoiceEcho::new(config);
-//! // voice.start().await.expect("server");
-//! # }
-//! ```
 
 pub mod api;
 pub mod config;
+pub mod discord;
 pub mod greeting;
 pub mod pipeline;
+pub mod registry;
 pub mod twilio;
 
 use std::any::Any;
@@ -32,6 +22,7 @@ use std::sync::Arc;
 
 use axum::routing::{get, post};
 use axum::Router;
+use echo_system_types::llm::LmProvider;
 use echo_system_types::plugin::{Plugin, PluginContext, PluginResult, PluginRole};
 use echo_system_types::{HealthStatus, PluginMeta, SetupPrompt};
 use tokio::sync::Mutex;
@@ -39,10 +30,27 @@ use tower_http::trace::TraceLayer;
 
 use config::Config;
 use pipeline::audio;
-use pipeline::claude::ClaudeBridge;
+use pipeline::bridge::BridgeClient;
+use pipeline::conversation::ConversationManager;
 use pipeline::stt::SttClient;
 use pipeline::tts::TtsClient;
+use registry::CallRegistry;
 use twilio::outbound::TwilioClient;
+
+/// How LLM communication is routed for a call.
+#[derive(Clone)]
+pub enum Brain {
+    /// Direct LLM invocation via provider (plugin mode).
+    Local(Arc<ConversationManager>),
+    /// Forwarded to bridge-echo multiplexer.
+    Bridge(Arc<BridgeClient>),
+}
+
+/// Metadata for an outbound call — context and reason injected into the first prompt.
+pub struct CallMeta {
+    pub context: Option<String>,
+    pub reason: Option<String>,
+}
 
 /// Shared application state accessible from all handlers.
 #[derive(Clone)]
@@ -50,18 +58,20 @@ pub struct AppState {
     pub config: Config,
     pub stt: Arc<SttClient>,
     pub tts: Arc<TtsClient>,
-    pub claude: Arc<ClaudeBridge>,
+    pub brain: Brain,
     pub twilio: Arc<TwilioClient>,
+    pub call_registry: CallRegistry,
     /// Pre-converted mu-law hold music data, if configured.
     pub hold_music: Option<Arc<Vec<u8>>>,
-    /// Context for outbound calls, keyed by call_sid.
+    /// Metadata for outbound calls, keyed by call_sid.
     /// Consumed on first utterance so the LLM knows why it called.
-    pub call_contexts: Arc<Mutex<HashMap<String, String>>>,
+    pub call_metas: Arc<Mutex<HashMap<String, CallMeta>>>,
 }
 
 /// The voice-echo plugin. Manages the voice pipeline lifecycle.
 pub struct VoiceEcho {
     config: Config,
+    provider: Option<Arc<dyn LmProvider>>,
     state: Option<AppState>,
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
@@ -71,6 +81,7 @@ impl VoiceEcho {
     pub fn new(config: Config) -> Self {
         Self {
             config,
+            provider: None,
             state: None,
             shutdown_tx: None,
         }
@@ -101,6 +112,31 @@ impl VoiceEcho {
             }
         });
 
+        // Build system prompt from SELF.md if configured
+        let system_prompt = config
+            .llm
+            .self_path
+            .as_ref()
+            .and_then(|path| std::fs::read_to_string(path).ok())
+            .unwrap_or_default();
+
+        // Determine brain mode
+        let brain = if let Some(ref bridge_url) = config.llm.bridge_url {
+            Brain::Bridge(Arc::new(BridgeClient::new(
+                bridge_url,
+                config.identity.caller_name.clone(),
+            )))
+        } else if let Some(ref provider) = self.provider {
+            Brain::Local(Arc::new(ConversationManager::new(
+                Arc::clone(provider),
+                system_prompt,
+                config.llm.session_timeout_secs,
+                config.llm.max_response_tokens,
+            )))
+        } else {
+            return Err("No LLM provider available. Set bridge_url or run as a plugin.".into());
+        };
+
         // Build shared state
         let state = AppState {
             stt: Arc::new(SttClient::new(
@@ -112,22 +148,15 @@ impl VoiceEcho {
                 config.inworld.voice_id.clone(),
                 config.inworld.model.clone(),
             )),
-            claude: Arc::new(ClaudeBridge::new(
-                config.claude.session_timeout_secs,
-                config.claude.dangerously_skip_permissions,
-                config
-                    .claude
-                    .self_path
-                    .as_ref()
-                    .map(std::path::PathBuf::from),
-            )),
+            brain,
             twilio: Arc::new(TwilioClient::new(
                 &config.twilio,
                 &config.server.external_url,
             )),
+            call_registry: CallRegistry::new(),
             config: config.clone(),
             hold_music,
-            call_contexts: Arc::new(Mutex::new(HashMap::new())),
+            call_metas: Arc::new(Mutex::new(HashMap::new())),
         };
 
         self.state = Some(state.clone());
@@ -249,6 +278,11 @@ impl VoiceEcho {
             )
             .route("/twilio/media", get(twilio::media::handle_media_upgrade))
             .route("/api/call", post(api::outbound::handle_call))
+            .route("/api/inject", post(api::inject::handle_inject))
+            .route(
+                "/discord-stream",
+                get(discord::stream::handle_discord_upgrade),
+            )
             .route("/health", get(health_handler))
             .layer(TraceLayer::new_for_http())
             .with_state(state)
@@ -258,10 +292,12 @@ impl VoiceEcho {
 /// Factory function — creates a fully initialized voice-echo plugin.
 pub async fn create(
     config: &serde_json::Value,
-    _ctx: &PluginContext,
+    ctx: &PluginContext,
 ) -> Result<Box<dyn Plugin>, Box<dyn std::error::Error + Send + Sync>> {
     let cfg: Config = serde_json::from_value(config.clone())?;
-    Ok(Box::new(VoiceEcho::new(cfg)))
+    let mut voice = VoiceEcho::new(cfg);
+    voice.provider = Some(Arc::clone(&ctx.provider));
+    Ok(Box::new(voice))
 }
 
 impl Plugin for VoiceEcho {

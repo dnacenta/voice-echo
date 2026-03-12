@@ -7,7 +7,8 @@ pub struct Config {
     pub twilio: TwilioConfig,
     pub groq: GroqConfig,
     pub inworld: InworldConfig,
-    pub claude: ClaudeConfig,
+    #[serde(alias = "claude")]
+    pub llm: LlmConfig,
     pub vad: VadConfig,
     #[serde(default)]
     pub api: ApiConfig,
@@ -62,7 +63,7 @@ fn default_inworld_model() -> String {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct ClaudeConfig {
+pub struct LlmConfig {
     #[serde(default = "default_session_timeout")]
     pub session_timeout_secs: u64,
     #[serde(default)]
@@ -70,13 +71,18 @@ pub struct ClaudeConfig {
     #[serde(default = "default_name")]
     pub name: String,
     #[serde(default)]
-    pub dangerously_skip_permissions: bool,
-    #[serde(default)]
     pub self_path: Option<String>,
     /// URL of bridge-echo multiplexer. When set, voice-echo forwards
     /// transcripts to bridge-echo instead of spawning its own Claude Code process.
     #[serde(default)]
     pub bridge_url: Option<String>,
+    /// Max tokens for LLM responses. Short for voice (default: 1024).
+    #[serde(default = "default_max_response_tokens")]
+    pub max_response_tokens: u32,
+}
+
+fn default_max_response_tokens() -> u32 {
+    1024
 }
 
 fn default_session_timeout() -> u64 {
@@ -243,13 +249,12 @@ impl Config {
             config.server.external_url = v;
         }
 
-        // Backward compat: if [greetings] was not set but [claude].greeting was
+        // Backward compat: if [greetings] was not set but [llm].greeting was
         // customized, use it as the sole inbound greeting template.
         if config.greetings.inbound == default_inbound_greetings()
-            && config.claude.greeting != default_greeting()
-            && !config.claude.greeting.is_empty()
+            && !config.llm.greeting.is_empty()
         {
-            config.greetings.inbound = vec![config.claude.greeting.clone()];
+            config.greetings.inbound = vec![config.llm.greeting.clone()];
         }
 
         Ok(config)

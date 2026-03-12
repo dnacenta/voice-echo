@@ -41,17 +41,20 @@ outbound_template = "Hey {caller}, {reason}"
 # Fallback when outbound call has no reason provided
 outbound_fallback = "Hey {caller}, I wanted to talk to you about something"
 
-[claude]
-# Uses `claude` CLI from PATH — no API key needed
+[llm]
+# Session timeout for voice conversations (seconds)
 session_timeout_secs = 300
 # Entity name used in greetings (default: "Echo")
 name = "Echo"
 # Static greeting override. Leave empty to use rotating time-aware greetings.
 greeting = ""
-# Allow claude CLI to run tools without permission prompts (use with caution)
-dangerously_skip_permissions = false
 # Path to self document injected as system prompt on every turn
 # self_path = "/path/to/SELF.md"
+# Max tokens for LLM responses (default: 1024, appropriate for voice)
+max_response_tokens = 1024
+# URL of bridge-echo multiplexer. When set, voice-echo forwards
+# transcripts to bridge-echo instead of using a local LLM provider.
+# bridge_url = "http://localhost:8445"
 
 [api]
 # Secret loaded from .env (ECHO_API_TOKEN)

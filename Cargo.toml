@@ -1,9 +1,9 @@
 [package]
 name = "voice-echo"
-version = "0.7.0"
+version = "0.8.0"
 edition = "2021"
 rust-version = "1.80"
-description = "Voice interface for Claude Code via Twilio"
+description = "Voice interface for AI entities via Twilio"
 license = "AGPL-3.0"
 
 [dependencies]

@@ -228,11 +228,11 @@ async fn handle_media_stream(mut socket: WebSocket, state: AppState) {
                     StreamEvent::Stop { .. } => {
                         tracing::info!(call_sid = %call_sid, "Stream stopped");
                         state.call_registry.deregister(&call_sid).await;
-                        if let Brain::Local(ref claude) = state.brain {
-                            claude.end_session(&call_sid).await;
+                        if let Brain::Local(ref conversation) = state.brain {
+                            conversation.end_session(&call_sid).await;
                         }
                         // Notify bridge-echo that the call ended
-                        if let Some(ref url) = state.config.claude.bridge_url {
+                        if let Some(ref url) = state.config.llm.bridge_url {
                             notify_call_ended(url, &call_sid).await;
                         }
                         break;
@@ -336,7 +336,7 @@ async fn run_pipeline(
             // Bridge-echo handles trust context and session management
             bridge.send(call_sid, trimmed, call_context).await?
         }
-        Brain::Local(claude) => {
+        Brain::Local(conversation) => {
             // Local mode — build trust-wrapped prompt and send directly
             let prompt = if let Some(ctx) = call_context {
                 format!(
@@ -356,7 +356,7 @@ async fn run_pipeline(
                     trimmed
                 )
             };
-            claude.send(call_sid, &prompt).await?
+            conversation.send(call_sid, &prompt).await?
         }
     };
     tracing::info!(call_sid, response_len = response.len(), "Claude response");
@@ -494,15 +494,15 @@ fn is_whisper_hallucination(transcript: &str) -> bool {
 /// Otherwise, selects a time-aware greeting from the built-in pool.
 async fn send_greeting(
     stream_sid: &str,
-    call_sid: &str,
+    _call_sid: &str,
     state: &AppState,
     tx: &mpsc::Sender<Message>,
     speaking: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let greeting = if state.config.claude.greeting.is_empty() {
-        crate::greeting::select_greeting(&state.config.claude.name)
+    let greeting = if state.config.llm.greeting.is_empty() {
+        crate::greeting::select_greeting(&state.config.llm.name)
     } else {
-        state.config.claude.greeting.clone()
+        state.config.llm.greeting.clone()
     };
     tracing::info!(greeting = %greeting, "Sending greeting");
     let mulaw = state.tts.synthesize(&greeting).await?;

@@ -131,7 +131,7 @@ async fn handle_discord_stream(mut socket: WebSocket, state: AppState) {
                         ).await;
 
                         // Notify bridge-echo so it can route text messages to voice
-                        if let Some(ref bridge_url) = state.config.claude.bridge_url {
+                        if let Some(ref bridge_url) = state.config.llm.bridge_url {
                             let url = bridge_url.clone();
                             let csid = call_sid.clone();
                             let sender = state.config.identity.caller_name.clone();
@@ -228,10 +228,10 @@ async fn handle_discord_stream(mut socket: WebSocket, state: AppState) {
                     DiscordEvent::Leave => {
                         tracing::info!(call_sid = %call_sid, "Discord voice session ended");
                         state.call_registry.deregister(&call_sid).await;
-                        if let Brain::Local(ref claude) = state.brain {
-                            claude.end_session(&call_sid).await;
+                        if let Brain::Local(ref conversation) = state.brain {
+                            conversation.end_session(&call_sid).await;
                         }
-                        if let Some(ref url) = state.config.claude.bridge_url {
+                        if let Some(ref url) = state.config.llm.bridge_url {
                             notify::notify_call_ended(url, &call_sid).await;
                         }
                         break;
@@ -330,9 +330,9 @@ async fn run_pipeline(
 
     let response = match &state.brain {
         Brain::Bridge(bridge) => bridge.send(call_sid, trimmed, call_context).await?,
-        Brain::Local(claude) => {
+        Brain::Local(conversation) => {
             let prompt = build_prompt(trimmed, call_context);
-            claude.send(call_sid, &prompt).await?
+            conversation.send(call_sid, &prompt).await?
         }
     };
     tracing::info!(
@@ -420,7 +420,7 @@ async fn send_greeting(
     tx: &mpsc::Sender<Message>,
     speaking: &AtomicBool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let greeting = &state.config.claude.greeting;
+    let greeting = &state.config.llm.greeting;
     if greeting.is_empty() {
         return Ok(());
     }

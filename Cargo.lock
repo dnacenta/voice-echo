@@ -236,7 +236,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 [[package]]
 name = "echo-system-types"
 version = "0.4.0"
-source = "git+https://github.com/dnacenta/echo-system-types?branch=feat/v0.4.0-plugin-trait#3a220179d01805aad155ed5b62a0ff005019b438"
+source = "git+https://github.com/dnacenta/echo-system-types?branch=main#2b4a1bdaab4baff0ffa6df44de039e01aece9805"
 dependencies = [
  "serde",
  "serde_json",
@@ -1858,7 +1858,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "voice-echo"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "axum",
  "base64",
